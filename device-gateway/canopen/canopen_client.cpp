@@ -16,15 +16,18 @@ namespace wizard {
 namespace {
 
 // CiA301 COB-ID bases for the function codes we use in V1.
-constexpr canid_t kTpdo1Base = 0x180;  // position
-constexpr canid_t kTpdo2Base = 0x280;  // velocity
-constexpr canid_t kTpdo3Base = 0x380;  // current
-constexpr canid_t kSdoRequestBase = 0x600;   // client -> server (RSDO)
-constexpr canid_t kSdoResponseBase = 0x580;  // server -> client (TSDO)
+constexpr uint32_t kTpdo1Base = 0x180;  // position
+constexpr uint32_t kTpdo2Base = 0x280;  // velocity
+constexpr uint32_t kTpdo3Base = 0x380;  // current
+constexpr uint32_t kSdoRequestBase = 0x600;   // client -> server (RSDO)
+constexpr uint32_t kSdoResponseBase = 0x580;  // server -> client (TSDO)
 
 // SDO command specifiers (expedited transfer only, all our reads are UINT32).
 constexpr uint8_t kScsInitiateUploadRequest = 0x40;
 constexpr uint8_t kScsInitiateUploadResponseExpedited4Bytes = 0x43;
+constexpr uint8_t kScsInitiateUploadResponseExpedited1Byte = 0x4F;
+constexpr uint8_t kScsInitiateDownloadRequest1Byte = 0x2F;
+constexpr uint8_t kScsInitiateDownloadResponse = 0x60;
 constexpr uint8_t kScsAbort = 0x80;
 
 uint64_t now_us() {
@@ -65,61 +68,148 @@ CanopenClient::CanopenClient(const std::string& iface) {
         close(fd_);
         throw std::runtime_error("failed to bind CAN socket to " + iface);
     }
+
+    // Short receive timeout so the reader thread wakes up periodically to
+    // check stop_reader_, instead of blocking forever in read().
+    timeval tv{0, 200000};  // 200ms
+    setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    reader_thread_ = std::thread(&CanopenClient::reader_loop, this);
 }
 
 CanopenClient::~CanopenClient() {
+    stop_reader_ = true;
+    if (reader_thread_.joinable()) reader_thread_.join();
     if (fd_ >= 0) close(fd_);
 }
 
+void CanopenClient::reader_loop() {
+    can_frame frame{};
+    while (!stop_reader_.load()) {
+        ssize_t n = ::read(fd_, &frame, sizeof(frame));
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) continue;  // just a poll timeout
+            break;  // real socket error, stop the reader
+        }
+
+        if (frame.can_id == kSdoResponseBase + kCanopenNodeId) {
+            RawCanFrame raw{};
+            raw.can_id = frame.can_id;
+            std::memcpy(raw.data, frame.data, 8);
+            std::lock_guard<std::mutex> lock(sdo_mutex_);
+            sdo_response_ = raw;
+            sdo_response_ready_ = true;
+            sdo_cv_.notify_one();
+            continue;
+        }
+
+        uint32_t base = frame.can_id - kCanopenNodeId;
+        uint64_t ts = now_us();
+        if (base == kTpdo1Base && frame.can_dlc >= 4) {
+            push_pdo({ts, PdoKind::Position, decode_i32_le(frame.data)});
+        } else if (base == kTpdo2Base && frame.can_dlc >= 4) {
+            push_pdo({ts, PdoKind::Velocity, decode_i32_le(frame.data)});
+        } else if (base == kTpdo3Base && frame.can_dlc >= 2) {
+            push_pdo({ts, PdoKind::Current, decode_i16_le_as_i32(frame.data)});
+        }
+        // Unrecognized frame: ignore.
+    }
+
+    reader_stopped_ = true;
+    pdo_cv_.notify_all();
+    sdo_cv_.notify_all();
+}
+
+void CanopenClient::push_pdo(const PdoSample& sample) {
+    std::lock_guard<std::mutex> lock(pdo_mutex_);
+    pdo_queue_.push(sample);
+    pdo_cv_.notify_one();
+}
+
+std::optional<PdoSample> CanopenClient::read_next_pdo() {
+    std::unique_lock<std::mutex> lock(pdo_mutex_);
+    pdo_cv_.wait(lock, [this] { return !pdo_queue_.empty() || reader_stopped_.load(); });
+    if (pdo_queue_.empty()) return std::nullopt;  // reader stopped, nothing left
+    PdoSample sample = pdo_queue_.front();
+    pdo_queue_.pop();
+    return sample;
+}
+
+std::optional<CanopenClient::RawCanFrame> CanopenClient::send_sdo_request_and_wait(
+    const RawCanFrame& request) {
+    std::lock_guard<std::mutex> serialize(sdo_request_mutex_);
+
+    {
+        std::lock_guard<std::mutex> lock(sdo_mutex_);
+        sdo_response_ready_ = false;  // discard any stale response
+    }
+
+    can_frame frame{};
+    frame.can_id = request.can_id;
+    frame.can_dlc = 8;
+    std::memcpy(frame.data, request.data, 8);
+    if (::write(fd_, &frame, sizeof(frame)) != sizeof(frame)) return std::nullopt;
+
+    std::unique_lock<std::mutex> lock(sdo_mutex_);
+    bool got_response = sdo_cv_.wait_for(lock, std::chrono::seconds(2), [this] {
+        return sdo_response_ready_ || reader_stopped_.load();
+    });
+    if (!got_response || !sdo_response_ready_) return std::nullopt;  // timeout or reader died
+
+    RawCanFrame response = sdo_response_;
+    sdo_response_ready_ = false;
+    return response;
+}
+
 std::optional<uint32_t> CanopenClient::sdo_read_u32(uint16_t index, uint8_t subindex) {
-    can_frame req{};
+    RawCanFrame req{};
     req.can_id = kSdoRequestBase + kCanopenNodeId;
-    req.can_dlc = 8;
     req.data[0] = kScsInitiateUploadRequest;
     req.data[1] = static_cast<uint8_t>(index & 0xFF);
     req.data[2] = static_cast<uint8_t>((index >> 8) & 0xFF);
     req.data[3] = subindex;
-    // data[4..7] unused for upload requests.
 
-    if (::write(fd_, &req, sizeof(req)) != sizeof(req)) return std::nullopt;
+    auto resp = send_sdo_request_and_wait(req);
+    if (!resp) return std::nullopt;
 
-    // Timeout so a missing/malformed reply doesn't hang the gateway forever.
-    timeval tv{2, 0};
-    setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    can_frame resp{};
-    while (true) {
-        ssize_t n = ::read(fd_, &resp, sizeof(resp));
-        if (n < 0) return std::nullopt;  // timeout or error
-        if (resp.can_id != kSdoResponseBase + kCanopenNodeId) continue;  // skip PDOs, etc.
-
-        uint8_t cs = resp.data[0];
-        if (cs == kScsAbort) return std::nullopt;
-        if (cs != kScsInitiateUploadResponseExpedited4Bytes) return std::nullopt;
-        return decode_u32_le(&resp.data[4]);
-    }
+    uint8_t cs = resp->data[0];
+    if (cs == kScsAbort) return std::nullopt;
+    if (cs != kScsInitiateUploadResponseExpedited4Bytes) return std::nullopt;
+    return decode_u32_le(&resp->data[4]);
 }
 
-std::optional<PdoSample> CanopenClient::read_next_pdo() {
-    can_frame frame{};
-    while (true) {
-        ssize_t n = ::read(fd_, &frame, sizeof(frame));
-        if (n < 0) return std::nullopt;
+std::optional<uint8_t> CanopenClient::sdo_read_u8(uint16_t index, uint8_t subindex) {
+    RawCanFrame req{};
+    req.can_id = kSdoRequestBase + kCanopenNodeId;
+    req.data[0] = kScsInitiateUploadRequest;
+    req.data[1] = static_cast<uint8_t>(index & 0xFF);
+    req.data[2] = static_cast<uint8_t>((index >> 8) & 0xFF);
+    req.data[3] = subindex;
 
-        uint64_t ts = now_us();
-        canid_t base = frame.can_id - kCanopenNodeId;
+    auto resp = send_sdo_request_and_wait(req);
+    if (!resp) return std::nullopt;
 
-        if (base == kTpdo1Base && frame.can_dlc >= 4) {
-            return PdoSample{ts, PdoKind::Position, decode_i32_le(frame.data)};
-        }
-        if (base == kTpdo2Base && frame.can_dlc >= 4) {
-            return PdoSample{ts, PdoKind::Velocity, decode_i32_le(frame.data)};
-        }
-        if (base == kTpdo3Base && frame.can_dlc >= 2) {
-            return PdoSample{ts, PdoKind::Current, decode_i16_le_as_i32(frame.data)};
-        }
-        // Unrecognized frame (e.g. SDO traffic during startup) - skip and keep reading.
-    }
+    uint8_t cs = resp->data[0];
+    if (cs == kScsAbort) return std::nullopt;
+    if (cs != kScsInitiateUploadResponseExpedited1Byte) return std::nullopt;
+    return resp->data[4];
+}
+
+bool CanopenClient::sdo_write_u8(uint16_t index, uint8_t subindex, uint8_t value) {
+    RawCanFrame req{};
+    req.can_id = kSdoRequestBase + kCanopenNodeId;
+    req.data[0] = kScsInitiateDownloadRequest1Byte;
+    req.data[1] = static_cast<uint8_t>(index & 0xFF);
+    req.data[2] = static_cast<uint8_t>((index >> 8) & 0xFF);
+    req.data[3] = subindex;
+    req.data[4] = value;
+
+    auto resp = send_sdo_request_and_wait(req);
+    if (!resp) return false;
+
+    uint8_t cs = resp->data[0];
+    if (cs == kScsAbort) return false;
+    return cs == kScsInitiateDownloadResponse;
 }
 
 }  // namespace wizard

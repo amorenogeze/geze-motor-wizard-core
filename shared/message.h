@@ -21,6 +21,14 @@ enum class MessageType : uint8_t {
     // Comando Device Info (SDO), engine -> gateway -> engine.
     DeviceInfoRequest = 0x30,
     DeviceInfoResponse = 0x31,
+
+    // Run/stop: UI -> engine -> gateway (comando), gateway -> engine -> UI (estado).
+    SetRunStopCommand = 0x40,
+    RunStopStatusEvent = 0x41,
+
+    // Estado del MCU, solo engine -> UI (device-gateway lo decide y lo
+    // manda; engine se limita a reenviarlo).
+    McuStatusEvent = 0x51,
 };
 
 struct Message {
@@ -75,11 +83,19 @@ struct DeviceInfoResponsePayload {
     uint32_t serial;
 };
 
+struct RunStopStatusPayload {
+    uint64_t timestamp_us;
+    bool running;
+};
+
 Message make_position_event(const PositionEventPayload& p);
 Message make_velocity_event(const VelocityEventPayload& p);
 Message make_current_event(const CurrentEventPayload& p);
 Message make_device_info_request();
 Message make_device_info_response(const DeviceInfoResponsePayload& p);
+Message make_set_run_stop_command(bool run);
+Message make_run_stop_status_event(const RunStopStatusPayload& p);
+Message make_mcu_status_event(bool responding);
 
 // Devuelven nullopt si el payload del Message no tiene el tamaño esperado
 // para ese tipo (frame corrupto o tipo inesperado).
@@ -87,5 +103,8 @@ std::optional<PositionEventPayload> parse_position_event(const Message& m);
 std::optional<VelocityEventPayload> parse_velocity_event(const Message& m);
 std::optional<CurrentEventPayload> parse_current_event(const Message& m);
 std::optional<DeviceInfoResponsePayload> parse_device_info_response(const Message& m);
+std::optional<bool> parse_set_run_stop_command(const Message& m);
+std::optional<RunStopStatusPayload> parse_run_stop_status_event(const Message& m);
+std::optional<bool> parse_mcu_status_event(const Message& m);
 
 }  // namespace wizard

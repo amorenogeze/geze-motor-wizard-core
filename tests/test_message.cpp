@@ -135,3 +135,39 @@ TEST(PayloadCodec, ParseRejectsWrongSize) {
     Message m{MessageType::PositionEvent, std::vector<uint8_t>(5, 0)};
     EXPECT_FALSE(parse_position_event(m).has_value());
 }
+
+TEST(PayloadCodec, SetRunStopCommandRoundTripRun) {
+    auto m = make_set_run_stop_command(true);
+    EXPECT_EQ(m.type, MessageType::SetRunStopCommand);
+    auto parsed = parse_set_run_stop_command(m);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_TRUE(*parsed);
+}
+
+TEST(PayloadCodec, SetRunStopCommandRoundTripStop) {
+    auto m = make_set_run_stop_command(false);
+    auto parsed = parse_set_run_stop_command(m);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_FALSE(*parsed);
+}
+
+TEST(PayloadCodec, RunStopStatusEventRoundTrip) {
+    RunStopStatusPayload p{4'000'000ULL, true};
+    auto m = make_run_stop_status_event(p);
+    auto parsed = parse_run_stop_status_event(m);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->timestamp_us, p.timestamp_us);
+    EXPECT_EQ(parsed->running, p.running);
+}
+
+TEST(PayloadCodec, McuStatusEventRoundTrip) {
+    auto m = make_mcu_status_event(true);
+    auto parsed = parse_mcu_status_event(m);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_TRUE(*parsed);
+
+    auto m2 = make_mcu_status_event(false);
+    auto parsed2 = parse_mcu_status_event(m2);
+    ASSERT_TRUE(parsed2.has_value());
+    EXPECT_FALSE(*parsed2);
+}

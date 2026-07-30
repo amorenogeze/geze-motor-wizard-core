@@ -115,6 +115,28 @@ Message make_device_info_response(const DeviceInfoResponsePayload& p) {
     return m;
 }
 
+Message make_set_run_stop_command(bool run) {
+    Message m;
+    m.type = MessageType::SetRunStopCommand;
+    m.payload.push_back(run ? 1 : 0);
+    return m;
+}
+
+Message make_run_stop_status_event(const RunStopStatusPayload& p) {
+    Message m;
+    m.type = MessageType::RunStopStatusEvent;
+    put_u64le(m.payload, p.timestamp_us);
+    m.payload.push_back(p.running ? 1 : 0);
+    return m;
+}
+
+Message make_mcu_status_event(bool responding) {
+    Message m;
+    m.type = MessageType::McuStatusEvent;
+    m.payload.push_back(responding ? 1 : 0);
+    return m;
+}
+
 std::optional<PositionEventPayload> parse_position_event(const Message& m) {
     if (m.type != MessageType::PositionEvent || m.payload.size() != 12) return std::nullopt;
     return PositionEventPayload{get_u64le(&m.payload[0]), get_i32le(&m.payload[8])};
@@ -136,4 +158,19 @@ std::optional<DeviceInfoResponsePayload> parse_device_info_response(const Messag
                                       get_u32le(&m.payload[8]), get_u32le(&m.payload[12])};
 }
 
-}  //
+std::optional<bool> parse_set_run_stop_command(const Message& m) {
+    if (m.type != MessageType::SetRunStopCommand || m.payload.size() != 1) return std::nullopt;
+    return m.payload[0] != 0;
+}
+
+std::optional<RunStopStatusPayload> parse_run_stop_status_event(const Message& m) {
+    if (m.type != MessageType::RunStopStatusEvent || m.payload.size() != 9) return std::nullopt;
+    return RunStopStatusPayload{get_u64le(&m.payload[0]), m.payload[8] != 0};
+}
+
+std::optional<bool> parse_mcu_status_event(const Message& m) {
+    if (m.type != MessageType::McuStatusEvent || m.payload.size() != 1) return std::nullopt;
+    return m.payload[0] != 0;
+}
+
+}  // namespace wizard

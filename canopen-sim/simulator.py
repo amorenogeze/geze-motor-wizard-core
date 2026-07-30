@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
+"""Simulated CANopen node for V1 (see docs/v1-spec.md).
 
-"""
 Node ID = 1. Responds to SDO reads of the Identity Object (0x1018) and
 cyclically emits TPDO1 (position), TPDO2 (velocity), TPDO3 (current).
 Requires a SocketCAN interface (e.g. vcan0) already up:
@@ -27,9 +27,14 @@ SDO_RESPONSE_ID = 0x580 + NODE_ID
 
 SCS_INITIATE_UPLOAD_REQUEST = 0x40
 SCS_INITIATE_UPLOAD_RESPONSE_EXPEDITED_4BYTES = 0x43
+SCS_INITIATE_UPLOAD_RESPONSE_EXPEDITED_1BYTE = 0x4F
+SCS_INITIATE_DOWNLOAD_REQUEST_1BYTE = 0x2F
+SCS_INITIATE_DOWNLOAD_RESPONSE = 0x60
 SCS_ABORT = 0x80
 
 IDENTITY_INDEX = 0x1018
+CONTROL_INDEX = 0x2000  # manufacturer-specific, see spec 8.1: 0=STOP, 1=RUN
+STATUS_INDEX = 0x2001   # manufacturer-specific, see spec 8.1: 0=STOPPED, 1=RUNNING
 
 # Hardcoded Identity Object values for V1 (placeholders, no real vendor).
 IDENTITY_VALUES = {
@@ -70,8 +75,25 @@ class MotorModel:
         return int(500 + 100 * math.sin(t))  # mA, oscillating around 500mA
 
 
-def sdo_responder(bus: can.Bus, stop: threading.Event) -> None:
-    """Answers Identity Object SDO upload requests. Aborts anything else."""
+class RunStopState:
+    """Shared, thread-safe run/stop state written via Control (0x2000),
+    read via Status (0x2001)."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._running = False
+
+    def set_running(self, running: bool) -> None:
+        with self._lock:
+            self._running = running
+
+    def is_running(self) -> bool:
+        with self._lock:
+            return self._running
+
+
+def sdo_responder(bus: can.Bus, run_stop: "RunStopState", stop: threading.Event) -> None:
+    """Answers Identity Object reads, Status reads, and Control writes."""
     while not stop.is_set():
         msg = bus.recv(timeout=0.2)
         if msg is None or msg.arbitration_id != SDO_REQUEST_ID:
@@ -80,26 +102,41 @@ def sdo_responder(bus: can.Bus, stop: threading.Event) -> None:
         cs = msg.data[0]
         index = msg.data[1] | (msg.data[2] << 8)
         subindex = msg.data[3]
+        idx_sub = msg.data[1:4]
 
-        if cs != SCS_INITIATE_UPLOAD_REQUEST:
-            continue  # only upload (read) requests are supported in V1
-
-        if index == IDENTITY_INDEX and subindex in IDENTITY_VALUES:
-            data = bytes([SCS_INITIATE_UPLOAD_RESPONSE_EXPEDITED_4BYTES]) + \
-                msg.data[1:4] + u32_to_le_bytes(IDENTITY_VALUES[subindex])
+        if cs == SCS_INITIATE_UPLOAD_REQUEST and index == IDENTITY_INDEX and subindex in IDENTITY_VALUES:
+            data = bytes([SCS_INITIATE_UPLOAD_RESPONSE_EXPEDITED_4BYTES]) + idx_sub + \
+                u32_to_le_bytes(IDENTITY_VALUES[subindex])
+        elif cs == SCS_INITIATE_UPLOAD_REQUEST and index == STATUS_INDEX and subindex == 0:
+            value = 1 if run_stop.is_running() else 0
+            data = bytes([SCS_INITIATE_UPLOAD_RESPONSE_EXPEDITED_1BYTE]) + idx_sub + \
+                bytes([value, 0, 0, 0])
+        elif cs == SCS_INITIATE_DOWNLOAD_REQUEST_1BYTE and index == CONTROL_INDEX and subindex == 0:
+            run_stop.set_running(msg.data[4] != 0)
+            data = bytes([SCS_INITIATE_DOWNLOAD_RESPONSE]) + idx_sub + b"\x00\x00\x00\x00"
         else:
-            data = bytes([SCS_ABORT]) + msg.data[1:4] + b"\x00\x00\x00\x00"
+            data = bytes([SCS_ABORT]) + idx_sub + b"\x00\x00\x00\x00"
 
         bus.send(can.Message(arbitration_id=SDO_RESPONSE_ID, data=data, is_extended_id=False))
 
 
-def pdo_sender(bus: can.Bus, motor: MotorModel, stop: threading.Event) -> None:
-    """Sends TPDO1/TPDO2 every 10ms, TPDO3 every 2ms (see spec, section 2)."""
+def pdo_sender(bus: can.Bus, motor: MotorModel, run_stop: "RunStopState",
+               stop: threading.Event) -> None:
+    """Sends TPDO1/TPDO2 every 10ms, TPDO3 every 2ms (see spec, section 2),
+    only while run_stop.is_running() is True."""
     next_slow = time.monotonic()
     next_fast = time.monotonic()
 
     while not stop.is_set():
         now = time.monotonic()
+
+        if not run_stop.is_running():
+            # Stopped: don't send, and keep resetting the schedule so we
+            # don't fire a burst of "catch-up" frames when RUN resumes.
+            next_slow = now
+            next_fast = now
+            time.sleep(0.01)
+            continue
 
         if now >= next_slow:
             bus.send(can.Message(arbitration_id=TPDO1_ID, data=i32_to_le_bytes(motor.position()),
@@ -123,10 +160,11 @@ def main() -> None:
 
     bus = can.Bus(channel=args.iface, interface="socketcan")
     motor = MotorModel()
+    run_stop = RunStopState()
     stop = threading.Event()
 
-    sdo_thread = threading.Thread(target=sdo_responder, args=(bus, stop), daemon=True)
-    pdo_thread = threading.Thread(target=pdo_sender, args=(bus, motor, stop), daemon=True)
+    sdo_thread = threading.Thread(target=sdo_responder, args=(bus, run_stop, stop), daemon=True)
+    pdo_thread = threading.Thread(target=pdo_sender, args=(bus, motor, run_stop, stop), daemon=True)
     sdo_thread.start()
     pdo_thread.start()
 
