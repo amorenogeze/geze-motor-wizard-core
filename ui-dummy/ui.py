@@ -22,7 +22,6 @@ MSG_DEVICE_INFO_REQUEST = 0x30
 MSG_DEVICE_INFO_RESPONSE = 0x31
 MSG_SET_RUN_STOP_COMMAND = 0x40
 MSG_RUN_STOP_STATUS_EVENT = 0x41
-MSG_GATEWAY_STATUS_EVENT = 0x50
 MSG_MCU_STATUS_EVENT = 0x51
 
 HEADER_SIZE = 3
@@ -72,7 +71,6 @@ class SharedState:
         self.current = deque(maxlen=HISTORY_LEN)
         self.run_stop_status = None  # None = unknown, True = RUNNING, False = STOPPED
         self.device_info = None  # dict or None
-        self.gateway_connected = None  # None = unknown, True/False
         self.mcu_responding = None  # None = unknown, True/False
         self.connected = True
 
@@ -145,9 +143,6 @@ def receiver_thread(sock: socket.socket, state: SharedState):
                         state.run_stop_status = parsed[1]
                 elif msg_type == MSG_DEVICE_INFO_RESPONSE:
                     state.device_info = parse_device_info(payload)
-                elif msg_type == MSG_GATEWAY_STATUS_EVENT:
-                    if len(payload) == 1:
-                        state.gateway_connected = payload[0] != 0
                 elif msg_type == MSG_MCU_STATUS_EVENT:
                     if len(payload) == 1:
                         state.mcu_responding = payload[0] != 0
@@ -249,7 +244,10 @@ def status_str(value):
 
 
 def main_menu(stdscr, sock: socket.socket, state: SharedState):
-    curses.curs_set(0)
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass  # terminal has no terminfo entry (e.g. minimal embedded image) - harmless to skip
     options = ["Commands", "Telemetry", "Device Info", "Exit"]
     selected = 0
 
@@ -258,9 +256,9 @@ def main_menu(stdscr, sock: socket.socket, state: SharedState):
         stdscr.clear()
         stdscr.addstr(0, 0, "== wizard-core UI ==")
         with state.lock:
-            gw = state.gateway_connected
+            connected = state.connected
             mcu = state.mcu_responding
-        stdscr.addstr(1, 0, f"engine: UP   gateway: {status_str(gw)}   mcu: {status_str(mcu)}")
+        stdscr.addstr(1, 0, f"wizard-core: {status_str(connected)}   mcu: {status_str(mcu)}")
         for i, opt in enumerate(options):
             prefix = "> " if i == selected else "  "
             stdscr.addstr(3 + i, 0, prefix + opt)
