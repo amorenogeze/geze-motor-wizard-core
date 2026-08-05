@@ -5,8 +5,7 @@
 
 namespace wizard {
 
-// Generic telemetry sample, independent of the underlying protocol
-// (CANopen PDO, Modbus register poll, etc).
+// Generic, protocol-independent (CANopen, Modbus, etc).
 enum class TelemetryKind { Position, Velocity, Current };
 
 struct TelemetrySample {
@@ -22,8 +21,7 @@ struct DeviceInfo {
     uint32_t serial;
 };
 
-// Protocol-agnostic device access. device-gateway/main.cpp depends only on
-// this interface, never on a specific protocol client directly.
+// Protocol-agnostic interface. main.cpp only depends on this.
 class DeviceTranslator {
 public:
     virtual ~DeviceTranslator() = default;
@@ -41,9 +39,7 @@ public:
     // unrecoverable transport error.
     virtual std::optional<TelemetrySample> read_next_telemetry() = 0;
 
-    // Lightweight liveness probe: true if the device responded to a
-    // minimal request. Ignores the actual value read - only cares whether
-    // the device answered at all (see docs/v1-spec.md, heartbeat design).
+    // Pong: just looking for answer no content.
     virtual bool probe_alive() = 0;
 };
 

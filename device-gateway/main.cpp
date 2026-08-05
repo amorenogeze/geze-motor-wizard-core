@@ -23,8 +23,7 @@ uint64_t now_us() {
     return static_cast<uint64_t>(tv.tv_sec) * 1'000'000ULL + static_cast<uint64_t>(tv.tv_usec);
 }
 
-// Reads all Identity Object fields and replies on the engine socket.
-// Can be called at startup or any time later (on-demand from the UI).
+// Reads the full Identity Object, replies to engine. Startup or on-demand.
 void handle_device_info_request(DeviceTranslator& translator, UnixSocket& engine_sock,
                                  std::mutex& send_mutex) {
     auto info = translator.read_device_info();
@@ -63,9 +62,7 @@ Message telemetry_sample_to_message(const TelemetrySample& sample) {
     return make_position_event({sample.timestamp_us, sample.value});  // unreachable
 }
 
-// Reads telemetry from the translator and forwards it to engine, forever.
-// Runs on its own thread; 'send_mutex' protects engine_sock from concurrent
-// writes with the other threads.
+// Own thread. send_mutex protects engine_sock from the other threads.
 void telemetry_loop(DeviceTranslator& translator, UnixSocket& engine_sock,
                      std::mutex& send_mutex) {
     while (true) {
@@ -82,9 +79,7 @@ void telemetry_loop(DeviceTranslator& translator, UnixSocket& engine_sock,
     }
 }
 
-// Handles every command from engine (DeviceInfoRequest, SetRunStopCommand),
-// forever, whenever they arrive - not just at startup. Runs on its own
-// thread; this is the only thread calling engine_sock.receive().
+// Handles commands from engine, not just at startup. Only thread calling receive().
 void command_loop(DeviceTranslator& translator, UnixSocket& engine_sock, std::mutex& send_mutex) {
     while (true) {
         auto messages = engine_sock.receive();
@@ -103,10 +98,7 @@ void command_loop(DeviceTranslator& translator, UnixSocket& engine_sock, std::mu
     }
 }
 
-// Probes the MCU every 500ms with a minimal SDO read (see
-// DeviceTranslator::probe_alive). Reports McuStatusEvent to engine only
-// when the alive/dead status changes, not on every probe. Runs on its
-// own thread, for the whole lifetime of device-gateway.
+// Probes the MCU every 500ms. Only sends McuStatusEvent if the state changes.
 void heartbeat_loop(DeviceTranslator& translator, UnixSocket& engine_sock, std::mutex& send_mutex) {
     bool last_known_alive = false;  // assume dead until proven otherwise
     while (true) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simulated CANopen node for V1 (see docs/v1-spec.md).
+"""Simulated CANopen node for V1.
 
 Node ID = 1. Responds to SDO reads of the Identity Object (0x1018) and
 cyclically emits TPDO1 (position), TPDO2 (velocity), TPDO3 (current).

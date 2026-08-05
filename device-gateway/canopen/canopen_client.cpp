@@ -69,8 +69,7 @@ CanopenClient::CanopenClient(const std::string& iface) {
         throw std::runtime_error("failed to bind CAN socket to " + iface);
     }
 
-    // Short receive timeout so the reader thread wakes up periodically to
-    // check stop_reader_, instead of blocking forever in read().
+    // Short timeout so the reader can periodically check stop_reader_.
     timeval tv{0, 200000};  // 200ms
     setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
@@ -96,53 +95,35 @@ void CanopenClient::reader_loop() {
             RawCanFrame raw{};
             raw.can_id = frame.can_id;
             std::memcpy(raw.data, frame.data, 8);
-            std::lock_guard<std::mutex> lock(sdo_mutex_);
-            sdo_response_ = raw;
-            sdo_response_ready_ = true;
-            sdo_cv_.notify_one();
+            sdo_response_queue_.push(raw);
             continue;
         }
 
         uint32_t base = frame.can_id - kCanopenNodeId;
         uint64_t ts = now_us();
         if (base == kTpdo1Base && frame.can_dlc >= 4) {
-            push_pdo({ts, PdoKind::Position, decode_i32_le(frame.data)});
+            pdo_queue_.push({ts, PdoKind::Position, decode_i32_le(frame.data)});
         } else if (base == kTpdo2Base && frame.can_dlc >= 4) {
-            push_pdo({ts, PdoKind::Velocity, decode_i32_le(frame.data)});
+            pdo_queue_.push({ts, PdoKind::Velocity, decode_i32_le(frame.data)});
         } else if (base == kTpdo3Base && frame.can_dlc >= 2) {
-            push_pdo({ts, PdoKind::Current, decode_i16_le_as_i32(frame.data)});
+            pdo_queue_.push({ts, PdoKind::Current, decode_i16_le_as_i32(frame.data)});
         }
         // Unrecognized frame: ignore.
     }
 
-    reader_stopped_ = true;
-    pdo_cv_.notify_all();
-    sdo_cv_.notify_all();
+    // Wake anyone blocked in read_next_pdo() or send_sdo_request_and_wait().
+    pdo_queue_.close();
+    sdo_response_queue_.close();
 }
 
-void CanopenClient::push_pdo(const PdoSample& sample) {
-    std::lock_guard<std::mutex> lock(pdo_mutex_);
-    pdo_queue_.push(sample);
-    pdo_cv_.notify_one();
-}
-
-std::optional<PdoSample> CanopenClient::read_next_pdo() {
-    std::unique_lock<std::mutex> lock(pdo_mutex_);
-    pdo_cv_.wait(lock, [this] { return !pdo_queue_.empty() || reader_stopped_.load(); });
-    if (pdo_queue_.empty()) return std::nullopt;  // reader stopped, nothing left
-    PdoSample sample = pdo_queue_.front();
-    pdo_queue_.pop();
-    return sample;
-}
+std::optional<PdoSample> CanopenClient::read_next_pdo() { return pdo_queue_.pop(); }
 
 std::optional<CanopenClient::RawCanFrame> CanopenClient::send_sdo_request_and_wait(
     const RawCanFrame& request) {
     std::lock_guard<std::mutex> serialize(sdo_request_mutex_);
 
-    {
-        std::lock_guard<std::mutex> lock(sdo_mutex_);
-        sdo_response_ready_ = false;  // discard any stale response
-    }
+    // Discard a stale response left over from a previous timed-out request.
+    sdo_response_queue_.clear();
 
     can_frame frame{};
     frame.can_id = request.can_id;
@@ -150,15 +131,7 @@ std::optional<CanopenClient::RawCanFrame> CanopenClient::send_sdo_request_and_wa
     std::memcpy(frame.data, request.data, 8);
     if (::write(fd_, &frame, sizeof(frame)) != sizeof(frame)) return std::nullopt;
 
-    std::unique_lock<std::mutex> lock(sdo_mutex_);
-    bool got_response = sdo_cv_.wait_for(lock, std::chrono::seconds(2), [this] {
-        return sdo_response_ready_ || reader_stopped_.load();
-    });
-    if (!got_response || !sdo_response_ready_) return std::nullopt;  // timeout or reader died
-
-    RawCanFrame response = sdo_response_;
-    sdo_response_ready_ = false;
-    return response;
+    return sdo_response_queue_.pop_for(std::chrono::seconds(2));
 }
 
 std::optional<uint32_t> CanopenClient::sdo_read_u32(uint16_t index, uint8_t subindex) {

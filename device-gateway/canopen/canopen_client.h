@@ -1,13 +1,13 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <string>
 #include <thread>
+
+#include "thread_safe_queue.h"
 
 namespace wizard {
 
@@ -22,69 +22,52 @@ struct PdoSample {
     int32_t value;  // Current only uses the low 16 bits, sign-extended.
 };
 
-// CANopen client over a SocketCAN interface (e.g. "vcan0", "can0").
-// V1 scope: single node, hardcoded OD mapping.
+// CANopen client over SocketCAN (e.g. "vcan0", "can0"). V1: single node,
+// hardcoded OD mapping.
 //
-// Internally owns a single background thread that reads every CAN frame
-// and dispatches it: TPDOs go to an internal queue (consumed by
-// read_next_pdo), SDO responses wake up whichever SDO call is waiting for
-// one (there's at most one in-flight SDO transaction at a time - see
-// sdo_request_mutex_). This avoids two callers racing reads on the same
-// socket fd (see docs/v1-spec.md, note on the single-reader-thread design).
+// One background thread (reader_loop) reads every CAN frame and routes
+// it into a queue: TPDOs -> pdo_queue_ (read_next_pdo), SDO responses ->
+// sdo_response_queue_ (send_sdo_request_and_wait; only one SDO
+// transaction in flight at a time, via sdo_request_mutex_). Avoids two
+// callers racing reads on the same fd.
 class CanopenClient {
 public:
-    // Opens and binds a raw CAN socket on 'iface', starts the reader
-    // thread. Throws on failure to open/bind.
+    // Opens/binds the CAN socket, starts the reader thread. Throws on failure.
     explicit CanopenClient(const std::string& iface);
     ~CanopenClient();
 
     CanopenClient(const CanopenClient&) = delete;
     CanopenClient& operator=(const CanopenClient&) = delete;
 
-    // SDO expedited upload of a UINT32 at index:subindex. Blocks with a
-    // timeout. Returns nullopt on timeout, SDO abort, or malformed response.
+    // SDO upload of a UINT32. nullopt on timeout/abort/malformed response.
     std::optional<uint32_t> sdo_read_u32(uint16_t index, uint8_t subindex);
 
-    // SDO expedited upload of a UINT8 at index:subindex. Same semantics
-    // as sdo_read_u32, for single-byte objects (e.g. run/stop status).
+    // Same as sdo_read_u32, for UINT8 objects (e.g. run/stop status).
     std::optional<uint8_t> sdo_read_u8(uint16_t index, uint8_t subindex);
 
-    // SDO expedited download (write) of a UINT8 at index:subindex. Blocks
-    // with a timeout. Returns false on timeout, SDO abort, or unexpected
-    // response.
+    // SDO download (write) of a UINT8. false on timeout/abort.
     bool sdo_write_u8(uint16_t index, uint8_t subindex, uint8_t value);
 
-    // Blocks until the next TPDO is available from the internal queue.
-    // Returns nullopt only once the reader thread has stopped (socket
-    // closed/error) and the queue is drained.
+    // Blocks for the next TPDO. nullopt once the reader thread has stopped.
     std::optional<PdoSample> read_next_pdo();
 
 private:
     void reader_loop();
-    void push_pdo(const PdoSample& sample);
 
     struct RawCanFrame {
         uint32_t can_id;
         uint8_t data[8];
     };
-    // Sends an SDO request and blocks (with a 2s timeout) for the matching
-    // response frame, delivered by reader_loop. Serializes concurrent SDO
-    // calls via sdo_request_mutex_ (only one in-flight transaction at a time).
+    // Sends an SDO request, waits (2s timeout) for the matching response
+    // via sdo_response_queue_. Serialized by sdo_request_mutex_.
     std::optional<RawCanFrame> send_sdo_request_and_wait(const RawCanFrame& request);
 
     int fd_;
     std::thread reader_thread_;
     std::atomic<bool> stop_reader_{false};
-    std::atomic<bool> reader_stopped_{false};
 
-    std::mutex pdo_mutex_;
-    std::condition_variable pdo_cv_;
-    std::queue<PdoSample> pdo_queue_;
-
-    std::mutex sdo_mutex_;
-    std::condition_variable sdo_cv_;
-    bool sdo_response_ready_ = false;
-    RawCanFrame sdo_response_{};
+    ThreadSafeQueue<PdoSample> pdo_queue_;
+    ThreadSafeQueue<RawCanFrame> sdo_response_queue_;
 
     std::mutex sdo_request_mutex_;  // one SDO transaction in flight at a time
 };

@@ -7,9 +7,8 @@
 
 namespace wizard {
 
-// CANopen implementation of DeviceTranslator (see docs/v1-spec.md, 8.1).
-// Owns a CanopenClient and maps the abstract interface to this node's
-// hardcoded OD (Identity Object, 0x2000 Control, 0x2001 Status, TPDO1-3).
+// CANopen implementation of DeviceTranslator. Hardcoded OD: Identity,
+// 0x2000 Control, 0x2001 Status, TPDO1-3 (see docs/v1-spec.md §8.1).
 class CanopenTranslator : public DeviceTranslator {
 public:
     explicit CanopenTranslator(const std::string& iface);
