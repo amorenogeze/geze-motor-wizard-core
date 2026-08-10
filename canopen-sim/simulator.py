@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simulated CANopen node for V1.
+"""Simulated CANopen node for Version 1.
 
 Node ID = 1. Responds to SDO reads of the Identity Object (0x1018) and
 cyclically emits TPDO1 (position), TPDO2 (velocity), TPDO3 (current).
@@ -33,10 +33,10 @@ SCS_INITIATE_DOWNLOAD_RESPONSE = 0x60
 SCS_ABORT = 0x80
 
 IDENTITY_INDEX = 0x1018
-CONTROL_INDEX = 0x2000  # manufacturer-specific, see spec 8.1: 0=STOP, 1=RUN
-STATUS_INDEX = 0x2001   # manufacturer-specific, see spec 8.1: 0=STOPPED, 1=RUNNING
+CONTROL_INDEX = 0x2000  # manufacturer-specific,  0=STOP, 1=RUN
+STATUS_INDEX = 0x2001   # manufacturer-specific,  0=STOPPED, 1=RUNNING
 
-# Hardcoded Identity Object values for V1 (placeholders, no real vendor).
+# Hardcoded Identity Object values for Version 1 (placeholders, no real vendor).
 IDENTITY_VALUES = {
     0x01: 0x0000A1A0,  # Vendor ID
     0x02: 0x00000001,  # Product Code
@@ -122,7 +122,7 @@ def sdo_responder(bus: can.Bus, run_stop: "RunStopState", stop: threading.Event)
 
 def pdo_sender(bus: can.Bus, motor: MotorModel, run_stop: "RunStopState",
                stop: threading.Event) -> None:
-    """Sends TPDO1/TPDO2 every 10ms, TPDO3 every 2ms (see spec, section 2),
+    """Sends TPDO1/TPDO2 every 10ms, TPDO3 every 2ms,
     only while run_stop.is_running() is True."""
     next_slow = time.monotonic()
     next_fast = time.monotonic()

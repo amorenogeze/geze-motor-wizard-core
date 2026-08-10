@@ -4,8 +4,8 @@ namespace wizard {
 
 namespace {
 constexpr uint16_t kIdentityIndex = 0x1018;
-constexpr uint16_t kControlIndex = 0x2000;   // manufacturer-specific, see spec 8.1
-constexpr uint16_t kStatusIndex = 0x2001;    // manufacturer-specific, see spec 8.1
+constexpr uint16_t kControlIndex = 0x2000;
+constexpr uint16_t kStatusIndex = 0x2001;
 
 TelemetryKind to_telemetry_kind(PdoKind kind) {
     switch (kind) {
