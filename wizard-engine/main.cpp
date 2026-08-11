@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <cstdlib>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -31,20 +32,29 @@ struct GatewayChannel {
     UnixSocket* sock = nullptr;
 };
 
+// Controls per-telemetry-message logging in log_message() below. Off by
+// default - telemetry can be very chatty (~500 messages/sec combined
+// while RUNNING). Enable with WIZARD_VERBOSE=1. Connection/error
+// logging stays on regardless of this flag.
+bool g_verbose_telemetry = false;
+
 // Prints one received message in a human-readable form.
 void log_message(const Message& msg) {
     switch (msg.type) {
         case MessageType::PositionEvent: {
+            if (!g_verbose_telemetry) break;
             auto p = parse_position_event(msg);
             if (p) std::cout << "[t=" << p->timestamp_us << "us] position=" << p->position << "\n";
             break;
         }
         case MessageType::VelocityEvent: {
+            if (!g_verbose_telemetry) break;
             auto p = parse_velocity_event(msg);
             if (p) std::cout << "[t=" << p->timestamp_us << "us] velocity=" << p->velocity << "\n";
             break;
         }
         case MessageType::CurrentEvent: {
+            if (!g_verbose_telemetry) break;
             auto p = parse_current_event(msg);
             if (p) std::cout << "[t=" << p->timestamp_us << "us] current=" << p->current << "\n";
             break;
@@ -180,6 +190,8 @@ void ui_loop(GatewayChannel& gateway_channel, UiChannel& ui_channel) {
 }  // namespace
 
 int main() {
+    g_verbose_telemetry = std::getenv("WIZARD_VERBOSE") != nullptr;
+    
     GatewayChannel gateway_channel;
     UiChannel ui_channel;
 

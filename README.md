@@ -122,3 +122,43 @@ python3 ui/ui.py
 ```
 The simulator starts in **STOP** — no telemetry flows until you send
 `run` from the UI's Commands screen.
+
+
+### Debugging
+
+`wizard-engine` logs connection events (listen/connect/disconnect) and
+errors unconditionally — that output is always on, in both native runs
+and via `journalctl -u wizard-engine` on the board.
+
+Per-message telemetry logging (`PositionEvent`/`VelocityEvent`/`CurrentEvent`
+— up to ~500 lines/sec combined while RUNNING) is **off by default** to
+keep normal output readable, but can be turned on when actually needed
+via the `WIZARD_VERBOSE` environment variable. It's read once at
+process startup, so toggling it requires a restart, not a live signal.
+
+**Native / manual run:**
+```bash
+WIZARD_VERBOSE=1 ./build/wizard-engine
+```
+
+**On the board, via a systemd override** (keeps the default service
+definition quiet; this is an opt-in, temporary override):
+```bash
+sudo systemctl edit wizard-engine
+```
+Add:
+```ini
+[Service]
+Environment=WIZARD_VERBOSE=1
+```
+Then:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart wizard-engine
+```
+
+To turn it back off:
+```bash
+sudo systemctl revert wizard-engine
+sudo systemctl restart wizard-engine
+```
