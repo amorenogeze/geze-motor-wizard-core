@@ -76,11 +76,6 @@ implementation of the wire protocol — not the final production UI.
 encode/decode round-trips, socket framing, `ThreadSafeQueue` behavior).
 Native builds only; skipped automatically when cross-compiling.
 
-**`docs/`** — start at `docs/index.html`. Includes the full spec
-(`v1-spec.md`/`spec.html`), the interactive protocol reference
-(`protocol.html`), the DHSBC eMMC flashing guide (`flashing-guide.html`),
-and the current TODO/roadmap (`todo.html`).
-
 ### Usage
 
 **Requirements**
@@ -127,9 +122,3 @@ python3 ui/ui.py
 ```
 The simulator starts in **STOP** — no telemetry flows until you send
 `run` from the UI's Commands screen.
-
-**Cross-compiling for the DHSOM target** is done via `product-bsp`'s
-`kas`/Yocto build (separate repo), which fetches this repo as a recipe
-source — not part of this repository's own build. See
-`docs/flashing-guide.html` for writing a built image to the DHSBC's
-eMMC.
