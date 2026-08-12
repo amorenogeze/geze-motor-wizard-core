@@ -65,7 +65,7 @@ std::optional<Message> MessageParser::try_parse() {
     uint8_t type_byte = buffer_[0];
     uint16_t length = static_cast<uint16_t>(buffer_[1]) | (static_cast<uint16_t>(buffer_[2]) << 8);
 
-    if (buffer_.size() < kHeaderSize + length) return std::nullopt;  // frame incompleto todavía
+    if (buffer_.size() < kHeaderSize + length) return std::nullopt;  // frame not complete yet
 
     Message msg;
     msg.type = static_cast<MessageType>(type_byte);
@@ -102,7 +102,7 @@ Message make_current_event(const CurrentEventPayload& p) {
 Message make_device_info_request() {
     Message m;
     m.type = MessageType::DeviceInfoRequest;
-    return m;  // payload vacío, ver spec 3.2
+    return m;  // empty payload, see spec 3.2
 }
 
 Message make_device_info_response(const DeviceInfoResponsePayload& p) {

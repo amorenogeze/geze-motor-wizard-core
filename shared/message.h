@@ -7,27 +7,27 @@
 
 namespace wizard {
 
-// Frame binario: [1 byte type][2 bytes length LE][payload de 'length' bytes]
-// Simple a propósito para V1 (ver docs/v1-spec.md, sección 3).
+// Binary frame: [1 byte type][2 bytes length LE][payload of 'length' bytes]
+// Deliberately simple for V1 (see docs/v1-spec.md, section 3).
 enum class MessageType : uint8_t {
     Ping = 0x01,
     Pong = 0x02,
 
-    // Eventos de telemetría: uno por PDO recibido, gateway -> engine.
+    // Telemetry events: one per PDO received, gateway -> engine.
     PositionEvent = 0x21,
     VelocityEvent = 0x22,
     CurrentEvent = 0x23,
 
-    // Comando Device Info (SDO), engine -> gateway -> engine.
+    // Device Info command (SDO), engine -> gateway -> engine.
     DeviceInfoRequest = 0x30,
     DeviceInfoResponse = 0x31,
 
-    // Run/stop: UI -> engine -> gateway (comando), gateway -> engine -> UI (estado).
+    // Run/stop: UI -> engine -> gateway (command), gateway -> engine -> UI (status).
     SetRunStopCommand = 0x40,
     RunStopStatusEvent = 0x41,
 
-    // Estado del MCU, solo engine -> UI (device-gateway lo decide y lo
-    // manda; engine se limita a reenviarlo).
+    // MCU status, only engine -> UI (device-gateway decides it and
+    // sends it; engine just relays).
     McuStatusEvent = 0x51,
 };
 
@@ -42,24 +42,24 @@ struct Message {
 
 constexpr size_t kHeaderSize = 3;  // 1 byte type + 2 bytes length
 
-// Serializa un Message al formato de frame binario, listo para escribir al socket.
+// Serializes a Message into the binary frame format, ready to write to the socket.
 std::vector<uint8_t> encode_frame(const Message& msg);
 
 class MessageParser {
 public:
-    // Añade bytes recién leídos del socket al buffer interno.
+    // Appends bytes just read from the socket into the internal buffer.
     void feed(const uint8_t* data, size_t len);
 
-    // Intenta extraer un mensaje completo del buffer interno.
-    // Devuelve nullopt si no hay un frame completo todavía (normal en un
-    // socket de stream: los datos pueden llegar partidos entre llamadas).
+    // Attempts to extract one complete message from the internal buffer.
+    // Returns nullopt if there isn't a complete frame yet (normal on a
+    // stream socket: data can arrive split across calls).
     std::optional<Message> try_parse();
 
 private:
     std::vector<uint8_t> buffer_;
 };
 
-// --- Payloads tipados para los mensajes de V1 (docs/v1-spec.md, sección 3) ---
+// --- Typed payloads for the V1 messages (docs/v1-spec.md, section 3) ---
 
 struct PositionEventPayload {
     uint64_t timestamp_us;
@@ -97,8 +97,8 @@ Message make_set_run_stop_command(bool run);
 Message make_run_stop_status_event(const RunStopStatusPayload& p);
 Message make_mcu_status_event(bool responding);
 
-// Devuelven nullopt si el payload del Message no tiene el tamaño esperado
-// para ese tipo (frame corrupto o tipo inesperado).
+// Return nullopt if the Message payload doesn't have the expected size
+// for that type (corrupted frame or unexpected type).
 std::optional<PositionEventPayload> parse_position_event(const Message& m);
 std::optional<VelocityEventPayload> parse_velocity_event(const Message& m);
 std::optional<CurrentEventPayload> parse_current_event(const Message& m);
