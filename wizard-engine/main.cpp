@@ -157,33 +157,45 @@ void gateway_accept_loop(GatewayChannel& gateway_channel, UiChannel& ui_channel)
 // whichever gateway is currently connected (if any). Runs forever on its
 // own thread.
 void ui_loop(GatewayChannel& gateway_channel, UiChannel& ui_channel) {
-    std::cout << "listening for UI on " << kUiSocketPath << "\n";
-    auto accepted = listen_and_accept(kUiSocketPath);
-    if (!accepted) {
-        std::cerr << "failed to listen on " << kUiSocketPath << "\n";
-        return;
-    }
-    std::cout << "UI connected\n";
-
-    {
-        std::lock_guard<std::mutex> lock(ui_channel.mutex);
-        ui_channel.sock = std::move(*accepted);
-    }
-
     while (true) {
-        auto messages = ui_channel.sock->receive();
-        if (!messages) {
-            std::cout << "UI disconnected\n";
+        std::cout << "listening for UI on " << kUiSocketPath << "\n";
+        auto accepted = listen_and_accept(kUiSocketPath);
+        if (!accepted) {
+            std::cerr << "failed to listen on " << kUiSocketPath << "\n";
             return;
         }
-        for (const auto& msg : *messages) {
-            if (msg.type != MessageType::SetRunStopCommand &&
-                msg.type != MessageType::DeviceInfoRequest) {
-                continue;
-            }
-            std::lock_guard<std::mutex> lock(gateway_channel.mutex);
-            if (gateway_channel.sock) gateway_channel.sock->send(msg);
+        std::cout << "UI connected\n";
+
+        {
+            std::lock_guard<std::mutex> lock(ui_channel.mutex);
+            ui_channel.sock = std::move(*accepted);
         }
+
+        while (true) {
+            // ui_loop is the only thread that calls receive() on this
+            // socket, so reading ui_channel.sock without the mutex here
+            // is safe; the mutex only guards concurrent send() from
+            // gateway_loop.
+            auto messages = ui_channel.sock->receive();
+            if (!messages) {
+                std::cout << "UI disconnected\n";
+                break;
+            }
+            for (const auto& msg : *messages) {
+                if (msg.type != MessageType::SetRunStopCommand &&
+                    msg.type != MessageType::DeviceInfoRequest) {
+                    continue;
+                }
+                std::lock_guard<std::mutex> lock(gateway_channel.mutex);
+                if (gateway_channel.sock) gateway_channel.sock->send(msg);
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(ui_channel.mutex);
+            ui_channel.sock = std::nullopt;
+        }
+        // loop back and accept the next UI connection
     }
 }
 
