@@ -65,14 +65,18 @@ class MotorModel:
 
     def position(self) -> int:
         t = time.monotonic() - self._start
-        return int(1000 * t) % 1_000_000  # encoder counts, wraps for demo purposes
+        period = 10 
+        return int(750 + 250 * math.sin(2 * math.pi * t / period))  # 500–1000
 
     def velocity(self) -> int:
-        return 1000  # counts/s, constant in this toy model
+        t = time.monotonic() - self._start
+        period = 10
+        return int(1500 + 500 * math.sin(2 * math.pi * t / period))  # 1000–2000
 
     def current(self) -> int:
         t = time.monotonic() - self._start
-        return int(500 + 100 * math.sin(t))  # mA, oscillating around 500mA
+        period = 10  
+        return int(500 + 100 * math.sin(2 * math.pi * t / period))  # 400–600
 
 
 class RunStopState:
@@ -135,7 +139,7 @@ def pdo_sender(bus: can.Bus, motor: MotorModel, run_stop: "RunStopState",
             # don't fire a burst of "catch-up" frames when RUN resumes.
             next_slow = now
             next_fast = now
-            time.sleep(0.01)
+            time.sleep(0.1)
             continue
 
         if now >= next_slow:
@@ -150,7 +154,7 @@ def pdo_sender(bus: can.Bus, motor: MotorModel, run_stop: "RunStopState",
                                   is_extended_id=False))
             next_fast += 0.002
 
-        time.sleep(0.001)
+        time.sleep(0.1)
 
 
 def main() -> None:

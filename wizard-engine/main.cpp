@@ -1,10 +1,13 @@
-#include <iostream>
-#include <iomanip>
 #include <cstdlib>
+#include <filesystem>
+#include <iomanip>
+#include <iostream>
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <unistd.h>
 
+#include "db.h"
 #include "message.h"
 #include "unix_socket.h"
 
@@ -12,33 +15,52 @@ using namespace wizard;
 
 namespace {
 
-constexpr const char* kGatewaySocketPath = "/tmp/wizard-backend.sock";
-constexpr const char* kUiSocketPath = "/tmp/wizard-ui.sock";
+// Returns the DB path next to the binary, falling back to the compiled-in
+// default if /proc/self/exe is not readable (e.g. non-Linux host).
+std::string get_default_db_path() {
+    char buf[4096];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len < 0) return kDefaultDbPath;
+    buf[len] = '\0';
+    return (std::filesystem::path(buf).parent_path() / "door_tuning_wizard.db").string();
+}
 
-// Holds the UI's UnixSocket once connected, shared between gateway_loop
-// (forwards events to it) and ui_loop (owns the connection, receives
-// commands from it).
-struct UiChannel {
-    std::mutex mutex;
+// Controls per-telemetry-message console logging. Off by default —
+// telemetry is high volume (~500 msg/sec while RUNNING). Enable with
+// WIZARD_VERBOSE=1 at runtime. Connection/error logging is always on.
+bool g_verbose_telemetry = false;
+
+// -----------------------------------------------------------------------
+// Shared channel state
+// -----------------------------------------------------------------------
+
+// Command channel: UI -> engine (SetRunStopCommand, DeviceInfoRequest)
+//                  engine -> UI (RunStopStatusEvent, DeviceInfoResponse,
+//                                McuStatusEvent)
+struct UiCommandChannel {
+    std::mutex            mutex;
     std::optional<UnixSocket> sock;
 };
 
-// Points to whichever UnixSocket is the currently active gateway
-// connection (owned by main()'s reconnect loop). Nullptr if no gateway
-// is connected right now. Lets ui_loop forward commands even across
-// gateway reconnects.
+// Points to the currently active gateway socket. nullptr if disconnected.
 struct GatewayChannel {
-    std::mutex mutex;
+    std::mutex  mutex;
     UnixSocket* sock = nullptr;
 };
 
-// Controls per-telemetry-message logging in log_message() below. Off by
-// default - telemetry can be very chatty (~500 messages/sec combined
-// while RUNNING). Enable with WIZARD_VERBOSE=1. Connection/error
-// logging stays on regardless of this flag.
-bool g_verbose_telemetry = false;
+// Tracks the currently open run/session. Only touched from gateway_loop
+// (single thread) — no locking needed.
+struct RunTracker {
+    bool    run_open    = false;
+    int64_t session_id  = -1;
+    int64_t run_id      = -1;
+    int64_t device_id   = -1;
+};
 
-// Prints one received message in a human-readable form.
+// -----------------------------------------------------------------------
+// Logging
+// -----------------------------------------------------------------------
+
 void log_message(const Message& msg) {
     switch (msg.type) {
         case MessageType::PositionEvent: {
@@ -73,10 +95,9 @@ void log_message(const Message& msg) {
         }
         case MessageType::RunStopStatusEvent: {
             auto p = parse_run_stop_status_event(msg);
-            if (p) {
-                std::cout << "[t=" << p->timestamp_us << "us] run/stop status: "
+            if (p)
+                std::cout << "[t=" << p->timestamp_us << "us] run/stop: "
                           << (p->running ? "RUNNING" : "STOPPED") << "\n";
-            }
             break;
         }
         case MessageType::McuStatusEvent: {
@@ -88,18 +109,24 @@ void log_message(const Message& msg) {
             std::cout << "pong\n";
             break;
         default:
-            std::cout << "unhandled message type\n";
+            std::cout << "unhandled message type 0x"
+                      << std::hex << static_cast<int>(msg.type) << std::dec << "\n";
     }
 }
 
-// Reads telemetry/device-info/status/heartbeat from device-gateway, logs
-// everything, and forwards it to the UI. No inference happens here -
-// device-gateway already decided what McuStatusEvent/RunStopStatusEvent
-// mean; engine just relays. Returns when the gateway disconnects (caller
-// decides whether to reconnect).
-void gateway_loop(UnixSocket& gateway_sock, UiChannel& ui_channel) {
-    // Requested once per (re)connection - no refresh beyond that unless
-    // the UI asks for it on demand.
+bool is_command_reply(MessageType type) {
+    return type == MessageType::RunStopStatusEvent ||
+           type == MessageType::DeviceInfoResponse ||
+           type == MessageType::McuStatusEvent;
+}
+
+// -----------------------------------------------------------------------
+// Gateway loop — relays messages, writes telemetry to DB
+// -----------------------------------------------------------------------
+
+void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
+                   Database& db, DataTypeIds& dt_ids, RunTracker& tracker) {
+    // Request device info once per (re)connection.
     gateway_sock.send(make_device_info_request());
 
     while (true) {
@@ -108,28 +135,74 @@ void gateway_loop(UnixSocket& gateway_sock, UiChannel& ui_channel) {
             std::cout << "gateway disconnected\n";
             return;
         }
+
         for (const auto& msg : *messages) {
             log_message(msg);
 
-            bool forward_to_ui = msg.type == MessageType::RunStopStatusEvent ||
-                                  msg.type == MessageType::DeviceInfoResponse ||
-                                  msg.type == MessageType::McuStatusEvent ||
-                                  msg.type == MessageType::PositionEvent ||
-                                  msg.type == MessageType::VelocityEvent ||
-                                  msg.type == MessageType::CurrentEvent;
-            if (forward_to_ui) {
-                std::lock_guard<std::mutex> lock(ui_channel.mutex);
-                if (ui_channel.sock) ui_channel.sock->send(msg);
+            // --- Device Info — register/find device in DB ---
+            if (msg.type == MessageType::DeviceInfoResponse) {
+                auto p = parse_device_info_response(msg);
+                if (p && tracker.device_id < 0) {
+                    std::string serial = std::to_string(p->serial);
+                    tracker.device_id = db.ensure_device(serial);
+                    std::cout << "device registered, db id=" << tracker.device_id << "\n";
+
+                    // Open session now that we know the device.
+                    if (tracker.session_id < 0) {
+                        tracker.session_id = db.open_session();
+                        std::cout << "session opened, id=" << tracker.session_id << "\n";
+                    }
+                }
+
+            // --- Run/Stop state machine ---
+            } else if (msg.type == MessageType::RunStopStatusEvent) {
+                auto p = parse_run_stop_status_event(msg);
+                if (p) {
+                    if (p->running && !tracker.run_open && tracker.session_id >= 0) {
+                        tracker.run_id  = db.open_run(tracker.session_id, tracker.device_id);
+                        tracker.run_open = true;
+                        std::cout << "run opened, id=" << tracker.run_id << "\n";
+                    } else if (!p->running && tracker.run_open) {
+                        db.close_run(tracker.run_id);
+                        tracker.run_open = false;
+                        std::cout << "run closed, id=" << tracker.run_id << "\n";
+                    }
+                }
+
+            // --- Telemetry — write to DB only while a run is open ---
+	    } else if (tracker.run_open) {
+		    if (msg.type == MessageType::PositionEvent) {
+		        auto p = parse_position_event(msg);
+		        if (p) db.insert_data(tracker.run_id, 1,  // position
+		                               p->timestamp_us, p->position);
+		    } else if (msg.type == MessageType::VelocityEvent) {
+		        auto p = parse_velocity_event(msg);
+		        if (p) db.insert_data(tracker.run_id, 2,  // velocity
+		                               p->timestamp_us, p->velocity);
+		    } else if (msg.type == MessageType::CurrentEvent) {
+		        auto p = parse_current_event(msg);
+			if (p) db.insert_data(tracker.run_id, dt_ids.current,
+                       p->timestamp_us, static_cast<int32_t>(p->current));
+		    }
+		}
+
+            // --- Forward command replies to UI ---
+            if (is_command_reply(msg.type)) {
+                std::lock_guard<std::mutex> lock(cmd_channel.mutex);
+                if (cmd_channel.sock) cmd_channel.sock->send(msg);
             }
         }
     }
 }
 
-// Accepts the (single) gateway connection over and over, forever: when
-// one disconnects, goes back to listening for the next one.
-void gateway_accept_loop(GatewayChannel& gateway_channel, UiChannel& ui_channel) {
+// -----------------------------------------------------------------------
+// Accept loops
+// -----------------------------------------------------------------------
+
+void gateway_accept_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel,
+                          Database& db, DataTypeIds& dt_ids) {
     while (true) {
-        std::cout << "listening on " << kGatewaySocketPath << "\n";
+        std::cout << "listening for gateway on " << kGatewaySocketPath << "\n";
         auto sock = listen_and_accept(kGatewaySocketPath);
         if (!sock) {
             std::cerr << "failed to listen on " << kGatewaySocketPath << "\n";
@@ -138,78 +211,89 @@ void gateway_accept_loop(GatewayChannel& gateway_channel, UiChannel& ui_channel)
         std::cout << "gateway connected\n";
 
         {
-            std::lock_guard<std::mutex> lock(gateway_channel.mutex);
-            gateway_channel.sock = &*sock;
+            std::lock_guard<std::mutex> lock(gw_channel.mutex);
+            gw_channel.sock = &*sock;
         }
 
-        gateway_loop(*sock, ui_channel);  // blocks until gateway disconnects
+        // Fresh tracker per gateway connection — each reconnect starts a
+        // new session/run context.
+        RunTracker tracker;
+        gateway_loop(*sock, cmd_channel, db, dt_ids, tracker);
+
+        // If a run was still open when gateway disconnected, close it.
+        if (tracker.run_open)  db.close_run(tracker.run_id);
+        if (tracker.session_id >= 0) db.close_session(tracker.session_id);
 
         {
-            std::lock_guard<std::mutex> lock(gateway_channel.mutex);
-            gateway_channel.sock = nullptr;
+            std::lock_guard<std::mutex> lock(gw_channel.mutex);
+            gw_channel.sock = nullptr;
         }
-        // loop back and accept the next gateway connection
     }
 }
 
-// Waits for the UI to connect, stores the connection in 'ui_channel', then
-// forwards every SetRunStopCommand/DeviceInfoRequest it sends towards
-// whichever gateway is currently connected (if any). Runs forever on its
-// own thread.
-void ui_loop(GatewayChannel& gateway_channel, UiChannel& ui_channel) {
+void ui_command_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel) {
     while (true) {
-        std::cout << "listening for UI on " << kUiSocketPath << "\n";
-        auto accepted = listen_and_accept(kUiSocketPath);
+        std::cout << "listening for UI on " << kUiCommandSocketPath << "\n";
+        auto accepted = listen_and_accept(kUiCommandSocketPath);
         if (!accepted) {
-            std::cerr << "failed to listen on " << kUiSocketPath << "\n";
+            std::cerr << "failed to listen on " << kUiCommandSocketPath << "\n";
             return;
         }
         std::cout << "UI connected\n";
 
         {
-            std::lock_guard<std::mutex> lock(ui_channel.mutex);
-            ui_channel.sock = std::move(*accepted);
+            std::lock_guard<std::mutex> lock(cmd_channel.mutex);
+            cmd_channel.sock = std::move(*accepted);
         }
 
         while (true) {
-            // ui_loop is the only thread that calls receive() on this
-            // socket, so reading ui_channel.sock without the mutex here
-            // is safe; the mutex only guards concurrent send() from
-            // gateway_loop.
-            auto messages = ui_channel.sock->receive();
+            auto messages = cmd_channel.sock->receive();
             if (!messages) {
                 std::cout << "UI disconnected\n";
                 break;
             }
             for (const auto& msg : *messages) {
                 if (msg.type != MessageType::SetRunStopCommand &&
-                    msg.type != MessageType::DeviceInfoRequest) {
+                    msg.type != MessageType::DeviceInfoRequest)
                     continue;
-                }
-                std::lock_guard<std::mutex> lock(gateway_channel.mutex);
-                if (gateway_channel.sock) gateway_channel.sock->send(msg);
+                std::lock_guard<std::mutex> lock(gw_channel.mutex);
+                if (gw_channel.sock) gw_channel.sock->send(msg);
             }
         }
 
         {
-            std::lock_guard<std::mutex> lock(ui_channel.mutex);
-            ui_channel.sock = std::nullopt;
+            std::lock_guard<std::mutex> lock(cmd_channel.mutex);
+            cmd_channel.sock = std::nullopt;
         }
-        // loop back and accept the next UI connection
     }
 }
 
 }  // namespace
 
-int main() {
+// -----------------------------------------------------------------------
+// main
+// -----------------------------------------------------------------------
+
+int main(int argc, char** argv) {
     g_verbose_telemetry = std::getenv("WIZARD_VERBOSE") != nullptr;
-    
-    GatewayChannel gateway_channel;
-    UiChannel ui_channel;
 
-    std::thread ui_thread(ui_loop, std::ref(gateway_channel), std::ref(ui_channel));
+    std::string db_path = argc > 1 ? argv[1] : get_default_db_path();
 
-    gateway_accept_loop(gateway_channel, ui_channel);  // runs on main thread, forever
+    std::cout << "opening database " << db_path << "\n";
+    Database db(db_path);
+    db.connect();
+    DataTypeIds dt_ids = db.seed_static_data();
+    std::cout << "db ready — position=" << dt_ids.position
+              << " velocity=" << dt_ids.velocity
+              << " current=" << dt_ids.current << "\n";
+
+    GatewayChannel  gw_channel;
+    UiCommandChannel cmd_channel;
+
+    std::thread ui_thread(ui_command_loop,
+                          std::ref(gw_channel), std::ref(cmd_channel));
+
+    gateway_accept_loop(gw_channel, cmd_channel, db, dt_ids);  // runs forever
 
     ui_thread.join();
     return 0;
