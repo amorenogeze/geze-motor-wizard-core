@@ -284,7 +284,7 @@ def main_menu(stdscr, sock: socket.socket, state: SharedState):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--socket", default="/tmp/wizard-ui.sock")
+    parser.add_argument("--socket", default="/tmp/wizard-ui-command.sock")
     args = parser.parse_args()
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
