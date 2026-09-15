@@ -14,7 +14,7 @@ namespace wizard {
 // -----------------------------------------------------------------------
 
 constexpr const char* kGatewaySocketPath   = "/tmp/wizard-backend.sock";
-constexpr const char* kUiCommandSocketPath = "/tmp/wizard-ui-command.sock";
+constexpr const char* kUiCommandSocketPath = "/tmp/wizard-ui.sock";
 constexpr const char* kDefaultDbPath       = "/var/lib/wizard-core/door_tuning_wizard.db";
 
 // -----------------------------------------------------------------------
