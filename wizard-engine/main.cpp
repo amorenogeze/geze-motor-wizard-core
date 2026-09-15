@@ -22,7 +22,7 @@ std::string get_default_db_path() {
     ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (len < 0) return kDefaultDbPath;
     buf[len] = '\0';
-    return (std::filesystem::path(buf).parent_path() / "door_tuning_wizard.db").string();
+    return (std::filesystem::path(buf).parent_path() / "/tmp/door_tuning_wizard.db").string();
 }
 
 // Controls per-telemetry-message console logging. Off by default —
