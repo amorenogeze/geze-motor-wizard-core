@@ -49,23 +49,6 @@ void Database::disconnect() {
 }
 
 DataTypeIds Database::seed_data_types() {
-    exec(R"SQL(
-        INSERT INTO Data_Type (id, name, display_name, description, data_unit, data_max, data_min)
-            VALUES (1, 'position', 'Position', 'Encoder position', 'counts', 1000, 500)
-            ON CONFLICT(id) DO UPDATE SET
-                name=excluded.name, display_name=excluded.display_name,
-                description=excluded.description, data_unit=excluded.data_unit,
-                data_max=excluded.data_max, data_min=excluded.data_min;
-        -- same for velocity (2) and current (3)
-    )SQL");
-
-    DataTypeIds ids;
-    ids.position = resolve("position");
-    ids.velocity = resolve("velocity");
-    ids.current  = resolve("current");
-    return ids;
-}
-DataTypeIds Database::seed_data_types() {
     status_id_running_ = 2;
     status_id_stopped_ = 3;
 
