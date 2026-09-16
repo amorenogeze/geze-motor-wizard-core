@@ -65,7 +65,7 @@ public:
     // Seeds Status and Data_Type rows if not already present. Safe to call
     // on every startup — uses INSERT OR IGNORE, never duplicates rows.
     // Returns the resolved Data_Type IDs for position/velocity/current.
-    DataTypeIds seed_static_data();
+    DataTypeIds seed_data_types();
 
     // Inserts or retrieves the Device row for the given serial number.
     // Returns the Device.Id.
