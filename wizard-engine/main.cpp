@@ -282,7 +282,7 @@ int main(int argc, char** argv) {
     std::cout << "opening database " << db_path << "\n";
     Database db(db_path);
     db.connect();
-    DataTypeIds dt_ids = db.seed_static_data();
+    DataTypeIds dt_ids = db.seed_data_types();
     std::cout << "db ready — position=" << dt_ids.position
               << " velocity=" << dt_ids.velocity
               << " current=" << dt_ids.current << "\n";
