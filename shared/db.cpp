@@ -48,15 +48,27 @@ void Database::disconnect() {
     }
 }
 
-DataTypeIds Database::seed_static_data() {
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (1, 'pending');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (2, 'running');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (3, 'completed');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (4, 'aborted');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (5, 'error');");
+DataTypeIds Database::seed_data_types() {
+    exec(R"SQL(
+        INSERT INTO Data_Type (id, name, display_name, description, data_unit, data_max, data_min)
+            VALUES (1, 'position', 'Position', 'Encoder position', 'counts', 1000, 500)
+            ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, display_name=excluded.display_name,
+                description=excluded.description, data_unit=excluded.data_unit,
+                data_max=excluded.data_max, data_min=excluded.data_min;
+        -- same for velocity (2) and current (3)
+    )SQL");
 
+    DataTypeIds ids;
+    ids.position = resolve("position");
+    ids.velocity = resolve("velocity");
+    ids.current  = resolve("current");
+    return ids;
+}
+DataTypeIds Database::seed_data_types() {
     status_id_running_ = 2;
     status_id_stopped_ = 3;
+
     exec(R"SQL(
     INSERT INTO Data_Type (id, name, display_name, description, data_unit, data_max, data_min)
         VALUES (1, 'position', 'Position', 'Encoder position, wraps at 100', 'counts', 1000, 500)
@@ -64,14 +76,14 @@ DataTypeIds Database::seed_static_data() {
             name=excluded.name, display_name=excluded.display_name,
             description=excluded.description, data_unit=excluded.data_unit,
             data_max=excluded.data_max, data_min=excluded.data_min;
-    
+
     INSERT INTO Data_Type (id, name, display_name, description, data_unit, data_max, data_min)
         VALUES (2, 'velocity', 'Velocity', 'Motor shaft velocity', 'counts/s', 2000, 0)
         ON CONFLICT(id) DO UPDATE SET
             name=excluded.name, display_name=excluded.display_name,
             description=excluded.description, data_unit=excluded.data_unit,
             data_max=excluded.data_max, data_min=excluded.data_min;
-    
+
     INSERT INTO Data_Type (id, name, display_name, description, data_unit, data_max, data_min)
         VALUES (3, 'current', 'Current', 'Motor phase current', 'mA', 600, 400)
         ON CONFLICT(id) DO UPDATE SET
@@ -94,9 +106,9 @@ DataTypeIds Database::seed_static_data() {
         return id;
     };
 
-    ids.position = resolve("position");  // id=1
-    ids.velocity = resolve("velocity");  // id=2
-    ids.current  = resolve("current");   // id=3
+    ids.position = resolve("position");
+    ids.velocity = resolve("velocity");
+    ids.current  = resolve("current");
     return ids;
 }
 
