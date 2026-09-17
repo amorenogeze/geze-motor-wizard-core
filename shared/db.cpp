@@ -49,12 +49,6 @@ void Database::disconnect() {
 }
 
 DataTypeIds Database::seed_data_types() {
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (1, 'pending');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (2, 'running');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (3, 'completed');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (4, 'aborted');");
-    exec("INSERT OR IGNORE INTO Status (Id, status) VALUES (5, 'error');");
-
     status_id_running_ = 2;
     status_id_stopped_ = 3;
 
