@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -18,9 +19,37 @@ std::string get_default_db_path() {
     return kDefaultDbPath;
 }
 
-// Telemetry is high volume (~500 msg/sec while RUNNING), so per-message
-// console logging is off unless WIZARD_VERBOSE is set.
 bool g_verbose_telemetry = false;
+
+// -----------------------------------------------------------------------
+// Timestamped logging helpers
+// -----------------------------------------------------------------------
+
+std::string stamp() {
+    using namespace std::chrono;
+    const auto now  = system_clock::now();
+    const auto secs = system_clock::to_time_t(now);
+    const auto ms   = duration_cast<milliseconds>(now.time_since_epoch()).count() % 1000;
+
+    std::tm tm_buf{};
+    localtime_r(&secs, &tm_buf);
+
+    char buf[16];
+    strftime(buf, sizeof(buf), "%H:%M:%S", &tm_buf);
+
+    std::ostringstream ss;
+    ss << buf << '.' << std::setfill('0') << std::setw(3) << ms;
+    return ss.str();
+}
+
+std::ostream& logline() { return std::cout << "[" << stamp() << "] "; }
+std::ostream& errline() { return std::cerr << "[" << stamp() << "] "; }
+
+std::string type_hex(MessageType t) {
+    std::ostringstream ss;
+    ss << "0x" << std::hex << static_cast<int>(t);
+    return ss.str();
+}
 
 // -----------------------------------------------------------------------
 // Shared channel state
@@ -36,11 +65,17 @@ struct GatewayChannel {
     UnixSocket* sock = nullptr;
 };
 
-// The run this engine is currently writing telemetry into. The row itself is
-// created by the UI backend; the engine only looks it up.
 struct RunTracker {
     bool    run_open = false;
     int64_t run_id   = -1;
+};
+
+// Counters, so telemetry volume can be reported without logging every message.
+struct Stats {
+    uint64_t telemetry_received = 0;
+    uint64_t rows_inserted      = 0;
+    uint64_t replies_forwarded  = 0;
+    uint64_t replies_dropped    = 0;
 };
 
 // -----------------------------------------------------------------------
@@ -52,25 +87,25 @@ void log_message(const Message& msg) {
         case MessageType::PositionEvent: {
             if (!g_verbose_telemetry) break;
             auto p = parse_position_event(msg);
-            if (p) std::cout << "[t=" << p->timestamp_us << "us] position=" << p->position << "\n";
+            if (p) logline() << "position=" << p->position << "\n";
             break;
         }
         case MessageType::SpeedEvent: {
             if (!g_verbose_telemetry) break;
             auto p = parse_speed_event(msg);
-            if (p) std::cout << "[t=" << p->timestamp_us << "us] speed=" << p->speed<< "\n";
+            if (p) logline() << "speed=" << p->speed << "\n";
             break;
         }
         case MessageType::CurrentEvent: {
             if (!g_verbose_telemetry) break;
             auto p = parse_current_event(msg);
-            if (p) std::cout << "[t=" << p->timestamp_us << "us] current=" << p->current << "\n";
+            if (p) logline() << "current=" << p->current << "\n";
             break;
         }
         case MessageType::DeviceInfoResponse: {
             auto p = parse_device_info_response(msg);
             if (p) {
-                std::cout << std::hex << std::showbase
+                logline() << std::hex << std::showbase
                           << "device info: vendor=" << p->vendor_id
                           << " product=" << p->product_code
                           << " revision=" << p->revision
@@ -82,21 +117,20 @@ void log_message(const Message& msg) {
         case MessageType::RunStopStatusEvent: {
             auto p = parse_run_stop_status_event(msg);
             if (p)
-                std::cout << "[t=" << p->timestamp_us << "us] run/stop: "
-                          << (p->running ? "RUNNING" : "STOPPED") << "\n";
+                logline() << "run/stop: " << (p->running ? "RUNNING" : "STOPPED")
+                          << " (t=" << p->timestamp_us << "us)\n";
             break;
         }
         case MessageType::McuStatusEvent: {
             auto p = parse_mcu_status_event(msg);
-            if (p) std::cout << "mcu status: " << (*p ? "ALIVE" : "DEAD") << "\n";
+            if (p) logline() << "mcu status: " << (*p ? "ALIVE" : "DEAD") << "\n";
             break;
         }
         case MessageType::Pong:
-            std::cout << "pong\n";
+            logline() << "pong\n";
             break;
         default:
-            std::cout << "unhandled message type 0x"
-                      << std::hex << static_cast<int>(msg.type) << std::dec << "\n";
+            logline() << "unhandled message type " << type_hex(msg.type) << "\n";
     }
 }
 
@@ -106,71 +140,114 @@ bool is_command_reply(MessageType type) {
            type == MessageType::McuStatusEvent;
 }
 
+bool is_telemetry(MessageType type) {
+    return type == MessageType::PositionEvent ||
+           type == MessageType::SpeedEvent ||
+           type == MessageType::CurrentEvent;
+}
+
 // -----------------------------------------------------------------------
-// Gateway loop — relays messages, writes telemetry to DB
+// Gateway loop
 // -----------------------------------------------------------------------
 
 void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
-                  Database& db, const DataTypeIds& dt_ids, RunTracker& tracker) {
+                  Database& db, const DataTypeIds& dt_ids, RunTracker& tracker,
+                  Stats& stats) {
+    logline() << "requesting device info\n";
     gateway_sock.send(make_device_info_request());
 
     while (true) {
         auto messages = gateway_sock.receive();
         if (!messages) {
-            std::cout << "gateway disconnected\n";
+            errline() << "gateway disconnected\n";
             return;
         }
 
         for (const auto& msg : *messages) {
             log_message(msg);
 
+            if (is_telemetry(msg.type)) ++stats.telemetry_received;
+
             if (msg.type == MessageType::RunStopStatusEvent) {
                 auto p = parse_run_stop_status_event(msg);
                 if (p) {
                     if (p->running && !tracker.run_open) {
-                        // The backend owns the Runs row; find the open one.
                         tracker.run_id = db.current_run_id();
                         if (tracker.run_id < 0) {
                             tracker.run_open = false;
-                            std::cerr << "device running but no open run in DB, "
-                                         "telemetry will be dropped\n";
+                            errline() << "RUNNING but no open run in DB "
+                                         "(no row in Runs with End_Time IS NULL) "
+                                         "- telemetry will be dropped\n";
                         } else {
                             tracker.run_open = true;
-                            std::cout << "attached to run id=" << tracker.run_id << "\n";
+                            logline() << "attached to run id=" << tracker.run_id << "\n";
                         }
+                    } else if (p->running && tracker.run_open) {
+                        logline() << "RUNNING repeated, already on run id="
+                                  << tracker.run_id << "\n";
                     } else if (!p->running && tracker.run_open) {
-                        std::cout << "detached from run id=" << tracker.run_id << "\n";
+                        logline() << "detached from run id=" << tracker.run_id
+                                  << " after " << stats.rows_inserted << " rows\n";
                         tracker.run_open = false;
                         tracker.run_id   = -1;
+                    } else {
+                        logline() << "STOPPED with no run attached\n";
                     }
+                } else {
+                    errline() << "failed to parse RunStopStatusEvent\n";
                 }
 
             } else if (tracker.run_open) {
                 if (msg.type == MessageType::PositionEvent) {
                     auto p = parse_position_event(msg);
-                    if (p) db.insert_data(tracker.run_id, dt_ids.position,
-                                          p->timestamp_us, p->position);
+                    if (p) {
+                        db.insert_data(tracker.run_id, dt_ids.position,
+                                       p->timestamp_us, p->position);
+                        ++stats.rows_inserted;
+                    }
                 } else if (msg.type == MessageType::SpeedEvent) {
                     auto p = parse_speed_event(msg);
-                    if (p) db.insert_data(tracker.run_id, dt_ids.speed,
-                                          p->timestamp_us, p->speed);
+                    if (p) {
+                        db.insert_data(tracker.run_id, dt_ids.speed,
+                                       p->timestamp_us, p->speed);
+                        ++stats.rows_inserted;
+                    }
                 } else if (msg.type == MessageType::CurrentEvent) {
                     auto p = parse_current_event(msg);
-                    if (p) db.insert_data(tracker.run_id, dt_ids.current,
-                                          p->timestamp_us,
-                                          static_cast<int32_t>(p->current));
+                    if (p) {
+                        db.insert_data(tracker.run_id, dt_ids.current,
+                                       p->timestamp_us,
+                                       static_cast<int32_t>(p->current));
+                        ++stats.rows_inserted;
+                    }
                 }
+
+                // Progress without per-message spam.
+                if (stats.rows_inserted && stats.rows_inserted % 500 == 0)
+                    logline() << stats.rows_inserted << " rows written to run id="
+                              << tracker.run_id << "\n";
+
+            } else if (is_telemetry(msg.type)) {
+                // Telemetry arriving with no run attached is the silent
+                // data-loss case, so say it once per hundred.
+                if (stats.telemetry_received % 100 == 1)
+                    errline() << "telemetry with no run attached, dropping ("
+                              << stats.telemetry_received << " so far)\n";
             }
 
+            // --- Forward command replies to the UI ---
             if (is_command_reply(msg.type)) {
                 std::lock_guard<std::mutex> lock(cmd_channel.mutex);
                 if (cmd_channel.sock) {
-                    cmd_channel.sock->send(msg);
-                    std::cout << "forwarded 0x" << std::hex << static_cast<int>(msg.type)
-                              << std::dec << " to UI\n";
+                    const bool ok = cmd_channel.sock->send(msg);
+                    ++stats.replies_forwarded;
+                    logline() << "forwarded " << type_hex(msg.type)
+                              << " to UI" << (ok ? "" : " (SEND FAILED)") << "\n";
                 } else {
-                    std::cerr << "no UI connected, dropping 0x" << std::hex
-                              << static_cast<int>(msg.type) << std::dec << "\n";
+                    ++stats.replies_dropped;
+                    errline() << "dropped " << type_hex(msg.type)
+                              << ": no UI connected (" << stats.replies_dropped
+                              << " dropped so far)\n";
                 }
             }
         }
@@ -182,15 +259,15 @@ void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
 // -----------------------------------------------------------------------
 
 void gateway_accept_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel,
-                         Database& db, const DataTypeIds& dt_ids) {
+                         Database& db, const DataTypeIds& dt_ids, Stats& stats) {
     while (true) {
-        std::cout << "listening for gateway on " << kGatewaySocketPath << "\n";
+        logline() << "listening for gateway on " << kGatewaySocketPath << "\n";
         auto sock = listen_and_accept(kGatewaySocketPath);
         if (!sock) {
-            std::cerr << "failed to listen on " << kGatewaySocketPath << "\n";
+            errline() << "failed to listen on " << kGatewaySocketPath << "\n";
             return;
         }
-        std::cout << "gateway connected\n";
+        logline() << "gateway connected\n";
 
         {
             std::lock_guard<std::mutex> lock(gw_channel.mutex);
@@ -198,24 +275,28 @@ void gateway_accept_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_chann
         }
 
         RunTracker tracker;
-        gateway_loop(*sock, cmd_channel, db, dt_ids, tracker);
+        gateway_loop(*sock, cmd_channel, db, dt_ids, tracker, stats);
 
         {
             std::lock_guard<std::mutex> lock(gw_channel.mutex);
             gw_channel.sock = nullptr;
         }
+
+        logline() << "gateway session ended: " << stats.rows_inserted
+                  << " rows, " << stats.replies_forwarded << " replies forwarded, "
+                  << stats.replies_dropped << " dropped\n";
     }
 }
 
 void ui_command_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel) {
     while (true) {
-        std::cout << "listening for UI on " << kUiCommandSocketPath << "\n";
+        logline() << "listening for UI on " << kUiCommandSocketPath << "\n";
         auto accepted = listen_and_accept(kUiCommandSocketPath);
         if (!accepted) {
-            std::cerr << "failed to listen on " << kUiCommandSocketPath << "\n";
+            errline() << "failed to listen on " << kUiCommandSocketPath << "\n";
             return;
         }
-        std::cout << "UI connected\n";
+        logline() << "UI connected\n";
 
         {
             std::lock_guard<std::mutex> lock(cmd_channel.mutex);
@@ -225,15 +306,27 @@ void ui_command_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel) 
         while (true) {
             auto messages = cmd_channel.sock->receive();
             if (!messages) {
-                std::cout << "UI disconnected\n";
+                errline() << "UI disconnected\n";
                 break;
             }
             for (const auto& msg : *messages) {
+                logline() << "UI sent " << type_hex(msg.type) << "\n";
+
                 if (msg.type != MessageType::SetRunStopCommand &&
-                    msg.type != MessageType::DeviceInfoRequest)
+                    msg.type != MessageType::DeviceInfoRequest) {
+                    errline() << "ignoring unexpected UI message "
+                              << type_hex(msg.type) << "\n";
                     continue;
+                }
+
                 std::lock_guard<std::mutex> lock(gw_channel.mutex);
-                if (gw_channel.sock) gw_channel.sock->send(msg);
+                if (gw_channel.sock) {
+                    gw_channel.sock->send(msg);
+                    logline() << "forwarded " << type_hex(msg.type) << " to gateway\n";
+                } else {
+                    errline() << "dropped " << type_hex(msg.type)
+                              << ": no gateway connected\n";
+                }
             }
         }
 
@@ -254,35 +347,40 @@ int main(int argc, char** argv) {
     g_verbose_telemetry = std::getenv("WIZARD_VERBOSE") != nullptr;
 
     const std::string db_path = argc > 1 ? argv[1] : get_default_db_path();
-    std::cout << "opening database " << db_path << "\n";
+    logline() << "opening database " << db_path
+              << (g_verbose_telemetry ? " (verbose telemetry ON)" : "") << "\n";
 
     Database db(db_path);
 
-    // The database is created and migrated by the UI backend. Wait for it
-    // rather than failing, so a device that boots first recovers on its own.
-    while (!db.validate()) {
-        std::cerr << "idle: " << db.last_error() << "\n";
+    DataTypeIds dt_ids;
+    while (true) {
+        if (db.validate()) {
+            dt_ids = db.resolve_data_types();
+            if (dt_ids.position >= 0 && dt_ids.speed >= 0 && dt_ids.current >= 0)
+                break;
+            errline() << "idle: Data_Type incomplete - position="
+                      << dt_ids.position << " speed=" << dt_ids.speed
+                      << " current=" << dt_ids.current << " (-1 = name not found)\n";
+        } else {
+            errline() << "idle: " << db.last_error() << "\n";
+        }
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 
-    DataTypeIds dt_ids = db.resolve_data_types();
-    while (dt_ids.position < 0 || dt_ids.speed < 0 || dt_ids.current < 0) {
-        std::cerr << "idle: Data_Type rows not seeded yet\n";
-        std::this_thread::sleep_for(std::chrono::seconds(5));
-        dt_ids = db.resolve_data_types();
-    }
+    logline() << "db ready - position=" << dt_ids.position
+              << " speed=" << dt_ids.speed
+              << " current=" << dt_ids.current << "\n";
 
-    std::cout << "db ready - position=" << dt_ids.position
-              << " speeed=" << dt_ids.speed
-              << " current="  << dt_ids.current << "\n";
+    logline() << "open runs at startup: run id=" << db.current_run_id() << "\n";
 
     GatewayChannel   gw_channel;
     UiCommandChannel cmd_channel;
+    Stats            stats;
 
     std::thread ui_thread(ui_command_loop,
                           std::ref(gw_channel), std::ref(cmd_channel));
 
-    gateway_accept_loop(gw_channel, cmd_channel, db, dt_ids);
+    gateway_accept_loop(gw_channel, cmd_channel, db, dt_ids, stats);
 
     ui_thread.join();
     return 0;
