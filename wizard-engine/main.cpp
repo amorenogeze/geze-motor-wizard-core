@@ -164,7 +164,14 @@ void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
 
             if (is_command_reply(msg.type)) {
                 std::lock_guard<std::mutex> lock(cmd_channel.mutex);
-                if (cmd_channel.sock) cmd_channel.sock->send(msg);
+                if (cmd_channel.sock) {
+                    cmd_channel.sock->send(msg);
+                    std::cout << "forwarded 0x" << std::hex << static_cast<int>(msg.type)
+                              << std::dec << " to UI\n";
+                } else {
+                    std::cerr << "no UI connected, dropping 0x" << std::hex
+                              << static_cast<int>(msg.type) << std::dec << "\n";
+                }
             }
         }
     }
