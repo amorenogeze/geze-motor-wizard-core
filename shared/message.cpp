@@ -83,11 +83,11 @@ Message make_position_event(const PositionEventPayload& p) {
     return m;
 }
 
-Message make_velocity_event(const VelocityEventPayload& p) {
+Message make_speed_event(const SpeedEventPayload& p) {
     Message m;
-    m.type = MessageType::VelocityEvent;
+    m.type = MessageType::SpeedEvent;
     put_u64le(m.payload, p.timestamp_us);
-    put_i32le(m.payload, p.velocity);
+    put_i32le(m.payload, p.speed);
     return m;
 }
 
@@ -142,9 +142,9 @@ std::optional<PositionEventPayload> parse_position_event(const Message& m) {
     return PositionEventPayload{get_u64le(&m.payload[0]), get_i32le(&m.payload[8])};
 }
 
-std::optional<VelocityEventPayload> parse_velocity_event(const Message& m) {
-    if (m.type != MessageType::VelocityEvent || m.payload.size() != 12) return std::nullopt;
-    return VelocityEventPayload{get_u64le(&m.payload[0]), get_i32le(&m.payload[8])};
+std::optional<SpeedEventPayload> parse_speed_event(const Message& m) {
+    if (m.type != MessageType::SpeedEvent || m.payload.size() != 12) return std::nullopt;
+    return SpeedEventPayload{get_u64le(&m.payload[0]), get_i32le(&m.payload[8])};
 }
 
 std::optional<CurrentEventPayload> parse_current_event(const Message& m) {

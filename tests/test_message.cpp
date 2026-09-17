@@ -91,13 +91,13 @@ TEST(PayloadCodec, PositionEventRoundTrip) {
     EXPECT_EQ(parsed->position, p.position);
 }
 
-TEST(PayloadCodec, VelocityEventRoundTrip) {
-    VelocityEventPayload p{2'000'000ULL, 6789};
-    auto m = make_velocity_event(p);
-    auto parsed = parse_velocity_event(m);
+TEST(PayloadCodec, SpeedEventRoundTrip) {
+    SpeedEventPayload p{2'000'000ULL, 6789};
+    auto m = make_speed_event(p);
+    auto parsed = parse_speed_event(m);
     ASSERT_TRUE(parsed.has_value());
     EXPECT_EQ(parsed->timestamp_us, p.timestamp_us);
-    EXPECT_EQ(parsed->velocity, p.velocity);
+    EXPECT_EQ(parsed->speed, p.speed);
 }
 
 TEST(PayloadCodec, CurrentEventRoundTrip) {

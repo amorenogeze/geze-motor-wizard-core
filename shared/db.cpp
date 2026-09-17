@@ -95,9 +95,9 @@ DataTypeIds Database::resolve_data_types() {
     DataTypeIds ids;
     if (!db_) return ids;
 
-    ids.position = resolve("position");
-    ids.velocity = resolve("velocity");
-    ids.current  = resolve("current");
+    ids.position    = resolve("position");
+    ids.speed       = resolve("speed");
+    ids.current     = resolve("current");
     return ids;
 }
 

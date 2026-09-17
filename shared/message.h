@@ -15,7 +15,7 @@ enum class MessageType : uint8_t {
 
     // Telemetry events: one per PDO received, gateway -> engine.
     PositionEvent = 0x21,
-    VelocityEvent = 0x22,
+    SpeedEvent = 0x22,
     CurrentEvent = 0x23,
 
     // Device Info command (SDO), engine -> gateway -> engine.
@@ -66,9 +66,9 @@ struct PositionEventPayload {
     int32_t position;
 };
 
-struct VelocityEventPayload {
+struct SpeedEventPayload {
     uint64_t timestamp_us;
-    int32_t velocity;
+    int32_t speed;
 };
 
 struct CurrentEventPayload {
@@ -89,7 +89,7 @@ struct RunStopStatusPayload {
 };
 
 Message make_position_event(const PositionEventPayload& p);
-Message make_velocity_event(const VelocityEventPayload& p);
+Message make_speed_event(const SpeedEventPayload& p);
 Message make_current_event(const CurrentEventPayload& p);
 Message make_device_info_request();
 Message make_device_info_response(const DeviceInfoResponsePayload& p);
@@ -100,7 +100,7 @@ Message make_mcu_status_event(bool responding);
 // Return nullopt if the Message payload doesn't have the expected size
 // for that type (corrupted frame or unexpected type).
 std::optional<PositionEventPayload> parse_position_event(const Message& m);
-std::optional<VelocityEventPayload> parse_velocity_event(const Message& m);
+std::optional<SpeedEventPayload> parse_speed_event(const Message& m);
 std::optional<CurrentEventPayload> parse_current_event(const Message& m);
 std::optional<DeviceInfoResponsePayload> parse_device_info_response(const Message& m);
 std::optional<bool> parse_set_run_stop_command(const Message& m);

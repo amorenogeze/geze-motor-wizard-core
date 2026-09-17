@@ -55,7 +55,7 @@ Message telemetry_sample_to_message(const TelemetrySample& sample) {
         case TelemetryKind::Position:
             return make_position_event({sample.timestamp_us, sample.value});
         case TelemetryKind::Velocity:
-            return make_velocity_event({sample.timestamp_us, sample.value});
+            return make_speed_event({sample.timestamp_us, sample.value});
         case TelemetryKind::Current:
             return make_current_event({sample.timestamp_us, static_cast<int16_t>(sample.value)});
     }

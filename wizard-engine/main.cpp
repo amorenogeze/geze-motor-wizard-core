@@ -55,7 +55,7 @@ void log_message(const Message& msg) {
             if (p) std::cout << "[t=" << p->timestamp_us << "us] position=" << p->position << "\n";
             break;
         }
-        case MessageType::VelocityEvent: {
+        case MessageType::SpeedEvent: {
             if (!g_verbose_telemetry) break;
             auto p = parse_speed_event(msg);
             if (p) std::cout << "[t=" << p->timestamp_us << "us] speed=" << p->speed<< "\n";
@@ -150,7 +150,7 @@ void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
                     auto p = parse_position_event(msg);
                     if (p) db.insert_data(tracker.run_id, dt_ids.position,
                                           p->timestamp_us, p->position);
-                } else if (msg.type == MessageType::VelocityEvent) {
+                } else if (msg.type == MessageType::SpeedEvent) {
                     auto p = parse_speed_event(msg);
                     if (p) db.insert_data(tracker.run_id, dt_ids.speed,
                                           p->timestamp_us, p->speed);
