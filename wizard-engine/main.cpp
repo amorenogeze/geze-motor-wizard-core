@@ -1,11 +1,10 @@
+#include <chrono>
 #include <cstdlib>
-#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
 #include <optional>
 #include <thread>
-#include <unistd.h>
 
 #include "db.h"
 #include "message.h"
@@ -15,46 +14,33 @@ using namespace wizard;
 
 namespace {
 
-// Returns the DB path next to the binary, falling back to the compiled-in
-// default if /proc/self/exe is not readable (e.g. non-Linux host).
 std::string get_default_db_path() {
-    char buf[4096];
-    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (len < 0) return kDefaultDbPath;
-    buf[len] = '\0';
-    return (std::filesystem::path(buf).parent_path() / "/tmp/door_tuning_wizard.db").string();
+    return kDefaultDbPath;
 }
 
-// Controls per-telemetry-message console logging. Off by default —
-// telemetry is high volume (~500 msg/sec while RUNNING). Enable with
-// WIZARD_VERBOSE=1 at runtime. Connection/error logging is always on.
+// Telemetry is high volume (~500 msg/sec while RUNNING), so per-message
+// console logging is off unless WIZARD_VERBOSE is set.
 bool g_verbose_telemetry = false;
 
 // -----------------------------------------------------------------------
 // Shared channel state
 // -----------------------------------------------------------------------
 
-// Command channel: UI -> engine (SetRunStopCommand, DeviceInfoRequest)
-//                  engine -> UI (RunStopStatusEvent, DeviceInfoResponse,
-//                                McuStatusEvent)
 struct UiCommandChannel {
-    std::mutex            mutex;
+    std::mutex                mutex;
     std::optional<UnixSocket> sock;
 };
 
-// Points to the currently active gateway socket. nullptr if disconnected.
 struct GatewayChannel {
     std::mutex  mutex;
     UnixSocket* sock = nullptr;
 };
 
-// Tracks the currently open run/session. Only touched from gateway_loop
-// (single thread) — no locking needed.
+// The run this engine is currently writing telemetry into. The row itself is
+// created by the UI backend; the engine only looks it up.
 struct RunTracker {
-    bool    run_open    = false;
-    int64_t session_id  = -1;
-    int64_t run_id      = -1;
-    int64_t device_id   = -1;
+    bool    run_open = false;
+    int64_t run_id   = -1;
 };
 
 // -----------------------------------------------------------------------
@@ -125,8 +111,7 @@ bool is_command_reply(MessageType type) {
 // -----------------------------------------------------------------------
 
 void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
-                   Database& db, DataTypeIds& dt_ids, RunTracker& tracker) {
-    // Request device info once per (re)connection.
+                  Database& db, const DataTypeIds& dt_ids, RunTracker& tracker) {
     gateway_sock.send(make_device_info_request());
 
     while (true) {
@@ -139,54 +124,44 @@ void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
         for (const auto& msg : *messages) {
             log_message(msg);
 
-            // --- Device Info — register/find device in DB ---
-            if (msg.type == MessageType::DeviceInfoResponse) {
-                auto p = parse_device_info_response(msg);
-                if (p && tracker.device_id < 0) {
-                    std::string serial = std::to_string(p->serial);
-                    tracker.device_id = db.ensure_device(serial);
-                    std::cout << "device registered, db id=" << tracker.device_id << "\n";
-
-                    // Open session now that we know the device.
-                    if (tracker.session_id < 0) {
-                        tracker.session_id = db.open_session();
-                        std::cout << "session opened, id=" << tracker.session_id << "\n";
-                    }
-                }
-
-            // --- Run/Stop state machine ---
-            } else if (msg.type == MessageType::RunStopStatusEvent) {
+            if (msg.type == MessageType::RunStopStatusEvent) {
                 auto p = parse_run_stop_status_event(msg);
                 if (p) {
-                    if (p->running && !tracker.run_open && tracker.session_id >= 0) {
-                        tracker.run_id  = db.open_run(tracker.session_id, tracker.device_id);
-                        tracker.run_open = true;
-                        std::cout << "run opened, id=" << tracker.run_id << "\n";
+                    if (p->running && !tracker.run_open) {
+                        // The backend owns the Runs row; find the open one.
+                        tracker.run_id = db.current_run_id();
+                        if (tracker.run_id < 0) {
+                            tracker.run_open = false;
+                            std::cerr << "device running but no open run in DB, "
+                                         "telemetry will be dropped\n";
+                        } else {
+                            tracker.run_open = true;
+                            std::cout << "attached to run id=" << tracker.run_id << "\n";
+                        }
                     } else if (!p->running && tracker.run_open) {
-                        db.close_run(tracker.run_id);
+                        std::cout << "detached from run id=" << tracker.run_id << "\n";
                         tracker.run_open = false;
-                        std::cout << "run closed, id=" << tracker.run_id << "\n";
+                        tracker.run_id   = -1;
                     }
                 }
 
-            // --- Telemetry — write to DB only while a run is open ---
-	    } else if (tracker.run_open) {
-		    if (msg.type == MessageType::PositionEvent) {
-		        auto p = parse_position_event(msg);
-		        if (p) db.insert_data(tracker.run_id, 1,  // position
-		                               p->timestamp_us, p->position);
-		    } else if (msg.type == MessageType::VelocityEvent) {
-		        auto p = parse_velocity_event(msg);
-		        if (p) db.insert_data(tracker.run_id, 2,  // velocity
-		                               p->timestamp_us, p->velocity);
-		    } else if (msg.type == MessageType::CurrentEvent) {
-		        auto p = parse_current_event(msg);
-			if (p) db.insert_data(tracker.run_id, dt_ids.current,
-                       p->timestamp_us, static_cast<int32_t>(p->current));
-		    }
-		}
+            } else if (tracker.run_open) {
+                if (msg.type == MessageType::PositionEvent) {
+                    auto p = parse_position_event(msg);
+                    if (p) db.insert_data(tracker.run_id, dt_ids.position,
+                                          p->timestamp_us, p->position);
+                } else if (msg.type == MessageType::VelocityEvent) {
+                    auto p = parse_velocity_event(msg);
+                    if (p) db.insert_data(tracker.run_id, dt_ids.velocity,
+                                          p->timestamp_us, p->velocity);
+                } else if (msg.type == MessageType::CurrentEvent) {
+                    auto p = parse_current_event(msg);
+                    if (p) db.insert_data(tracker.run_id, dt_ids.current,
+                                          p->timestamp_us,
+                                          static_cast<int32_t>(p->current));
+                }
+            }
 
-            // --- Forward command replies to UI ---
             if (is_command_reply(msg.type)) {
                 std::lock_guard<std::mutex> lock(cmd_channel.mutex);
                 if (cmd_channel.sock) cmd_channel.sock->send(msg);
@@ -200,7 +175,7 @@ void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
 // -----------------------------------------------------------------------
 
 void gateway_accept_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel,
-                          Database& db, DataTypeIds& dt_ids) {
+                         Database& db, const DataTypeIds& dt_ids) {
     while (true) {
         std::cout << "listening for gateway on " << kGatewaySocketPath << "\n";
         auto sock = listen_and_accept(kGatewaySocketPath);
@@ -215,14 +190,8 @@ void gateway_accept_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_chann
             gw_channel.sock = &*sock;
         }
 
-        // Fresh tracker per gateway connection — each reconnect starts a
-        // new session/run context.
         RunTracker tracker;
         gateway_loop(*sock, cmd_channel, db, dt_ids, tracker);
-
-        // If a run was still open when gateway disconnected, close it.
-        if (tracker.run_open)  db.close_run(tracker.run_id);
-        if (tracker.session_id >= 0) db.close_session(tracker.session_id);
 
         {
             std::lock_guard<std::mutex> lock(gw_channel.mutex);
@@ -277,23 +246,36 @@ void ui_command_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel) 
 int main(int argc, char** argv) {
     g_verbose_telemetry = std::getenv("WIZARD_VERBOSE") != nullptr;
 
-    std::string db_path = argc > 1 ? argv[1] : get_default_db_path();
-
+    const std::string db_path = argc > 1 ? argv[1] : get_default_db_path();
     std::cout << "opening database " << db_path << "\n";
-    Database db(db_path);
-    db.connect();
-    DataTypeIds dt_ids = db.seed_data_types();
-    std::cout << "db ready — position=" << dt_ids.position
-              << " velocity=" << dt_ids.velocity
-              << " current=" << dt_ids.current << "\n";
 
-    GatewayChannel  gw_channel;
+    Database db(db_path);
+
+    // The database is created and migrated by the UI backend. Wait for it
+    // rather than failing, so a device that boots first recovers on its own.
+    while (!db.validate()) {
+        std::cerr << "idle: " << db.last_error() << "\n";
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    }
+
+    DataTypeIds dt_ids = db.resolve_data_types();
+    while (dt_ids.position < 0 || dt_ids.velocity < 0 || dt_ids.current < 0) {
+        std::cerr << "idle: Data_Type rows not seeded yet\n";
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        dt_ids = db.resolve_data_types();
+    }
+
+    std::cout << "db ready - position=" << dt_ids.position
+              << " velocity=" << dt_ids.velocity
+              << " current="  << dt_ids.current << "\n";
+
+    GatewayChannel   gw_channel;
     UiCommandChannel cmd_channel;
 
     std::thread ui_thread(ui_command_loop,
                           std::ref(gw_channel), std::ref(cmd_channel));
 
-    gateway_accept_loop(gw_channel, cmd_channel, db, dt_ids);  // runs forever
+    gateway_accept_loop(gw_channel, cmd_channel, db, dt_ids);
 
     ui_thread.join();
     return 0;
