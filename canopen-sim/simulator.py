@@ -58,25 +58,25 @@ def i16_to_le_bytes(value: int) -> bytes:
 
 
 class MotorModel:
-    """Toy motor: position ramps up, velocity ~constant, current noisy."""
+    """Toy motor: values oscillate within the Data_Type ranges."""
 
     def __init__(self):
         self._start = time.monotonic()
 
     def position(self) -> int:
         t = time.monotonic() - self._start
-        period = 10 
-        return int(750 + 250 * math.sin(2 * math.pi * t / period))  # 500–1000
+        period = 10
+        return int(50 + 40 * math.sin(2 * math.pi * t / period))  # 10-90 %
 
     def velocity(self) -> int:
         t = time.monotonic() - self._start
         period = 10
-        return int(1500 + 500 * math.sin(2 * math.pi * t / period))  # 1000–2000
+        return int(1500 + 1000 * math.sin(2 * math.pi * t / period))  # 500-2500 rpm
 
     def current(self) -> int:
         t = time.monotonic() - self._start
-        period = 10  
-        return int(500 + 100 * math.sin(2 * math.pi * t / period))  # 400–600
+        period = 10
+        return int(10 + 6 * math.sin(2 * math.pi * t / period))  # 4-16 A
 
 
 class RunStopState:
