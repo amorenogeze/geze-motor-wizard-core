@@ -1,0 +1,5 @@
+if(EXISTS "/home/u7736/workspace/DTW/geze-motor-wizard-core/build/wizard_tests[1]_tests.cmake")
+  include("/home/u7736/workspace/DTW/geze-motor-wizard-core/build/wizard_tests[1]_tests.cmake")
+else()
+  add_test(wizard_tests_NOT_BUILT wizard_tests_NOT_BUILT)
+endif()

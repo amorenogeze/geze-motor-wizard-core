@@ -1,0 +1,12 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/u7736/workspace/DTW/geze-motor-wizard-core/build/cmake_install.cmake",
+		"/home/u7736/workspace/DTW/geze-motor-wizard-core/build/wizard-engine/cmake_install.cmake",
+		"/home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway/cmake_install.cmake",
+		"/home/u7736/workspace/DTW/geze-motor-wizard-core/build/_deps/googletest-build/cmake_install.cmake",
+		"/home/u7736/workspace/DTW/geze-motor-wizard-core/build/_deps/googletest-build/googlemock/cmake_install.cmake",
+		"/home/u7736/workspace/DTW/geze-motor-wizard-core/build/_deps/googletest-build/googletest/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

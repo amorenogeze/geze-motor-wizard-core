@@ -1,0 +1,2 @@
+/usr/bin/ar qc libshared.a CMakeFiles/shared.dir/shared/message.cpp.o CMakeFiles/shared.dir/shared/unix_socket.cpp.o CMakeFiles/shared.dir/shared/db.cpp.o
+/usr/bin/ranlib libshared.a
