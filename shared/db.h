@@ -16,7 +16,7 @@ constexpr const char* kUiCommandSocketPath = "/tmp/wizard-ui.sock";
 // -1 means the row is not present yet.
 struct DataTypeIds {
     int64_t position = -1;
-    int64_t velocity = -1;
+    int64_t speed = -1;
     int64_t current  = -1;
 };
 
