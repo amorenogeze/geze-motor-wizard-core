@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/wizard-engine.dir/link.d "CMakeFiles/wizard-engine.dir/main.cpp.o" -o wizard-engine  ../libshared.a /usr/lib/x86_64-linux-gnu/libsqlite3.so

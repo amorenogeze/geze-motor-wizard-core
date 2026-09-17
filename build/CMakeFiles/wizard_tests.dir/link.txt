@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/wizard_tests.dir/link.d CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o CMakeFiles/wizard_tests.dir/tests/test_unix_socket.cpp.o CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o -o wizard_tests  libshared.a lib/libgtest_main.a /usr/lib/x86_64-linux-gnu/libsqlite3.so lib/libgtest.a

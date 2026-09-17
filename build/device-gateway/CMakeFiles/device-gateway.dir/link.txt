@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/device-gateway.dir/link.d "CMakeFiles/device-gateway.dir/main.cpp.o" "CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o" "CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o" -o device-gateway  ../libshared.a /usr/lib/x86_64-linux-gnu/libsqlite3.so

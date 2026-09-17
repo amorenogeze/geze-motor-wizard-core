@@ -1,0 +1,176 @@
+{
+  "tests": 28,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "EncodeFrame",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "HeaderIsTypeThenLittleEndianLength",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "name": "MessageParserTest",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "ReturnsNulloptOnIncompleteHeader",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 18
+        },
+        {
+          "name": "ReturnsNulloptOnIncompletePayload",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 25
+        },
+        {
+          "name": "ParsesSingleCompleteFrame",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 36
+        },
+        {
+          "name": "ParsesTwoFramesFedTogether",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 48
+        },
+        {
+          "name": "HandlesFrameSplitAcrossMultipleFeeds",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 68
+        }
+      ]
+    },
+    {
+      "name": "PayloadCodec",
+      "tests": 11,
+      "testsuite": [
+        {
+          "name": "PositionEventRoundTrip",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 85
+        },
+        {
+          "name": "SpeedEventRoundTrip",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 94
+        },
+        {
+          "name": "CurrentEventRoundTrip",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 103
+        },
+        {
+          "name": "DeviceInfoRequestHasEmptyPayload",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 112
+        },
+        {
+          "name": "DeviceInfoResponseRoundTrip",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 118
+        },
+        {
+          "name": "ParseRejectsWrongType",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 129
+        },
+        {
+          "name": "ParseRejectsWrongSize",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 134
+        },
+        {
+          "name": "SetRunStopCommandRoundTripRun",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 139
+        },
+        {
+          "name": "SetRunStopCommandRoundTripStop",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 147
+        },
+        {
+          "name": "RunStopStatusEventRoundTrip",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 154
+        },
+        {
+          "name": "McuStatusEventRoundTrip",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_message.cpp",
+          "line": 163
+        }
+      ]
+    },
+    {
+      "name": "UnixSocketTest",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "ClientServerExchangePingPong",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_unix_socket.cpp",
+          "line": 17
+        },
+        {
+          "name": "ReceiveReturnsNulloptAfterPeerCloses",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_unix_socket.cpp",
+          "line": 51
+        },
+        {
+          "name": "ConnectToMissingSocketThrows",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_unix_socket.cpp",
+          "line": 73
+        }
+      ]
+    },
+    {
+      "name": "ThreadSafeQueue",
+      "tests": 8,
+      "testsuite": [
+        {
+          "name": "PushThenPopReturnsItem",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 10
+        },
+        {
+          "name": "PopIsFifo",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 18
+        },
+        {
+          "name": "PopBlocksUntilPush",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 28
+        },
+        {
+          "name": "PopForTimesOutWhenEmpty",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 40
+        },
+        {
+          "name": "PopForReturnsItemBeforeTimeout",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 46
+        },
+        {
+          "name": "ClearDiscardsQueuedItems",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 54
+        },
+        {
+          "name": "CloseWakesBlockedPop",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 63
+        },
+        {
+          "name": "PopAfterCloseDrainsRemainingItemsFirst",
+          "file": "\/home\/u7736\/workspace\/DTW\/geze-motor-wizard-core\/tests\/test_thread_safe_queue.cpp",
+          "line": 75
+        }
+      ]
+    }
+  ]
+}
