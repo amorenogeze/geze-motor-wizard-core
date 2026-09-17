@@ -57,8 +57,8 @@ void log_message(const Message& msg) {
         }
         case MessageType::VelocityEvent: {
             if (!g_verbose_telemetry) break;
-            auto p = parse_velocity_event(msg);
-            if (p) std::cout << "[t=" << p->timestamp_us << "us] velocity=" << p->velocity << "\n";
+            auto p = parse_speed_event(msg);
+            if (p) std::cout << "[t=" << p->timestamp_us << "us] speed=" << p->speed<< "\n";
             break;
         }
         case MessageType::CurrentEvent: {
@@ -151,9 +151,9 @@ void gateway_loop(UnixSocket& gateway_sock, UiCommandChannel& cmd_channel,
                     if (p) db.insert_data(tracker.run_id, dt_ids.position,
                                           p->timestamp_us, p->position);
                 } else if (msg.type == MessageType::VelocityEvent) {
-                    auto p = parse_velocity_event(msg);
-                    if (p) db.insert_data(tracker.run_id, dt_ids.velocity,
-                                          p->timestamp_us, p->velocity);
+                    auto p = parse_speed_event(msg);
+                    if (p) db.insert_data(tracker.run_id, dt_ids.speed,
+                                          p->timestamp_us, p->speed);
                 } else if (msg.type == MessageType::CurrentEvent) {
                     auto p = parse_current_event(msg);
                     if (p) db.insert_data(tracker.run_id, dt_ids.current,
@@ -259,14 +259,14 @@ int main(int argc, char** argv) {
     }
 
     DataTypeIds dt_ids = db.resolve_data_types();
-    while (dt_ids.position < 0 || dt_ids.velocity < 0 || dt_ids.current < 0) {
+    while (dt_ids.position < 0 || dt_ids.speed < 0 || dt_ids.current < 0) {
         std::cerr << "idle: Data_Type rows not seeded yet\n";
         std::this_thread::sleep_for(std::chrono::seconds(5));
         dt_ids = db.resolve_data_types();
     }
 
     std::cout << "db ready - position=" << dt_ids.position
-              << " velocity=" << dt_ids.velocity
+              << " speeed=" << dt_ids.speed
               << " current="  << dt_ids.current << "\n";
 
     GatewayChannel   gw_channel;
