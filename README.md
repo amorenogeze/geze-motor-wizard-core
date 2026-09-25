@@ -14,9 +14,11 @@ commands, and Device Info, driven through a terminal UI.
 The core is split into two small C++ processes connected by Unix
 sockets — `device-gateway`, which is the only component that speaks
 CANopen/Modbus, and `wizard-engine`, a pure relay with no protocol logic of
-its own. A Python-based simulated CANopen node (`canopen-sim`) stands
-in for real MCU hardware during development, so the whole stack can be
-exercised without a physical motor.
+its own. The motor controller is a **SOLO PICO**; everything specific to it
+lives in a JSON device profile (`device-gateway/canopen/devices/solopico.json`).
+A Python simulated SOLO PICO (`canopen-sim`) stands in for the real
+hardware during development, so the whole stack can be exercised without a
+physical motor.
 
 ### Actual Architecture
 
@@ -32,8 +34,9 @@ exercised without a physical motor.
 ├── shared/               # message framing, Unix socket transport, ThreadSafeQueue
 ├── wizard-engine/        # relay server: UI socket + gateway socket
 ├── device-gateway/       # CANopen client, DeviceTranslator abstraction
-│   └── canopen/            # SDO/PDO over SocketCAN (CanopenClient, CanopenTranslator)
-├── canopen-sim/          # simulated CANopen node (Python + python-can), dev/test only
+│   └── canopen/            # SDO/PDO over SocketCAN (CanopenClient, CanopenTranslator, DeviceProfile)
+│       └── devices/          # device profiles: solopico.json
+├── canopen-sim/          # simulated SOLO PICO (Python + python-can), dev/test only
 ├── ui/                   # reference terminal UI (curses)
 ├── tests/                # GoogleTest unit tests (shared/ + ThreadSafeQueue)
 ├── docs/                 # spec, interactive protocol reference, flashing guide, TODO
@@ -61,25 +64,33 @@ could be added without touching `main.cpp`. Its current implementation,
 single background reader thread over SocketCAN — SDO responses and TPDO
 telemetry are dispatched into two `ThreadSafeQueue`s, avoiding a race
 between the command path and the telemetry path on the same socket fd.
+`CanopenTranslator` has no object indexes of its own: it executes the
+device profile (`canopen/device_profile.h`/`.cpp`, see *Device profiles*
+below).
 
-**`canopen-sim/`** — a Python CANopen node (`python-can`) simulating
-node ID 1: responds to SDO reads/writes (Identity Object, plus the
-manufacturer-specific `Control`/`Status` run/stop objects) and emits
-TPDO telemetry while running. Requires a `vcan0` interface; never
-installed on production images with real CAN hardware.
+**`canopen-sim/`** — a Python simulated SOLO PICO (`python-can`), node
+ID 1: answers SDOs the way the PICO does (reads `0x42`, writes `0x22`/`0x60`,
+Q15.17 floats), sends synchronous TPDOs when it receives SYNC, and runs a
+toy brushed motor. Starts in the PICO's factory state (BLDC, analogue) so
+the gateway's configuration step is exercised. Requires a `vcan0`
+interface; never installed on production images with real CAN hardware.
 
 **`ui/`** — `ui.py`, a `curses`-based terminal UI with three screens
 (Commands, Telemetry, Device Info), included as a working reference
 implementation of the wire protocol — not the final production UI. 
 
 **`tests/`** — GoogleTest unit tests for `shared/` (message
-encode/decode round-trips, socket framing, `ThreadSafeQueue` behavior).
-Native builds only; skipped automatically when cross-compiling.
+encode/decode round-trips, socket framing, `ThreadSafeQueue` behavior),
+device profile parsing, and `CanopenClient`/`CanopenTranslator` against a
+fake SOLO PICO over a socketpair (no vcan needed). Native builds only;
+skipped automatically when cross-compiling.
 
 ### Usage
 
 **Requirements**
 - CMake ≥ 3.16, a C++17 compiler
+- SQLite3, nlohmann_json ≥ 3.2 (downloaded by CMake if not installed;
+  on Yocto add `nlohmann-json` to `DEPENDS`)
 - Linux with SocketCAN (`vcan` for development without real hardware)
 - Python 3 + `python-can` (`pip install -r canopen-sim/requirements.txt`)
 
@@ -114,14 +125,35 @@ python3 canopen-sim/simulator.py
 # Terminal 2 — relay
 ./build/wizard-engine
 
-# Terminal 3 — CANopen client
+# Terminal 3 — CANopen client  [iface] [device profile]
 ./build/device-gateway vcan0
 
 # Terminal 4 — UI (only once you want to interact)
 python3 ui/ui.py
 ```
 The simulator starts in **STOP** — no telemetry flows until you send
-`run` from the UI's Commands screen.
+`run` from the UI's Commands screen (the gateway only sends SYNC while
+running).
+
+### Device profiles
+
+`device-gateway` loads one JSON profile at startup and exits with a list of
+every problem if it is invalid. Lookup order: `argv[2]`,
+`$WIZARD_DEVICE_PROFILE`, `/etc/wizard/devices/solopico.json` (installed),
+then `devices/solopico.json` next to the executable (copied there by the
+build). The profile defines:
+
+| Section | Meaning |
+|---|---|
+| `node_id`, `sdo`, `sync_period_ms` | CANopen node, SDO style/timeout, SYNC period |
+| `objects` | name → `{index, sub, type}`; `type` is `u8/u16/u32/i16/i32/q17` (`q17` = SOLO float, value × 131072) |
+| `configure` | SDO writes applied when the node first answers, and again after it comes back from a power cycle; `"verify": true` reads back, `"skip": true` keeps a step without running it |
+| `run` / `stop` | SDO writes for the RUN / STOP commands; a failed RUN runs `stop` |
+| `status`, `alive_object` | object read for run/stop status and by the 500 ms heartbeat |
+| `device_info` | each field from an object or a fixed value |
+| `telemetry` | `tpdo` (COB-ID + type) or `sdo_poll` (object + period); `scale` converts to the integer sent on the socket (e.g. A → mA) |
+
+Keys starting with `_` are comments; any other unknown key is an error.
 
 
 ### Debugging

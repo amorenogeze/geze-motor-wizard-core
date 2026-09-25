@@ -12,6 +12,8 @@
 #### DEVICE-GATEWAY
 - [x] read from vCAN0. Receiving daat from CANsimulator.py. SOLO PICO in the near future.
 - [x] send data to wizard-backend.socket
-- [] implement real PICO scenario
+- [x] implement real PICO scenario: device profile `canopen/devices/solopico.json`, SYNC-driven TPDOs, PICO simulator
+- [] test on the real PICO (see solopico.json: TPDO enable bit, read subindex, Im polling)
+- [] decide telemetry units with UI/DB owner (current now mA; position = encoder counts)
 - [] 
 - []

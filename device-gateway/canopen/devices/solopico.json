@@ -1,0 +1,101 @@
+{
+  "_comment": "SOLO PICO device profile for device-gateway. Everything PICO-specific lives here: objects, startup configuration, run/stop, telemetry. Object indexes and encodings come from SOLO's official CANopen library (SOLOMotorControllersCanopen.h). Keys starting with '_' are comments. A step with \"skip\": true is kept but not executed.",
+
+  "name": "SOLO PICO",
+  "node_id": 1,
+
+  "sdo": {
+    "timeout_ms": 500,
+    "size_indicated_writes": false,
+    "read_subindex": null,
+    "_comment": "SOLO writes with cs 0x22 and answers reads with 0x42. read_subindex: set a number to force the subindex on reads if the PICO aborts plain reads."
+  },
+
+  "sync_period_ms": 10,
+  "telemetry_only_while_running": true,
+  "_comment_sync": "PICO TPDOs are synchronous: the gateway sends SYNC (0x080) every sync_period_ms, only while RUNNING.",
+
+  "objects": {
+    "_comment": "type q17 = SOLO float, value * 131072 on the wire.",
+    "error_register":        { "index": "0x1001", "type": "u32" },
+    "command_mode":          { "index": "0x3002", "type": "u32", "_values": "0 analogue, 1 digital" },
+    "current_limit":         { "index": "0x3003", "type": "q17", "_unit": "A" },
+    "torque_reference":      { "index": "0x3004", "type": "q17", "_unit": "A" },
+    "speed_reference":       { "index": "0x3005", "type": "i32", "_unit": "rpm" },
+    "motor_identification":  { "index": "0x3007", "type": "u32", "_values": "1 start" },
+    "drive_enable":          { "index": "0x3008", "type": "u32", "_values": "0 disabled (freewheel), 1 enabled" },
+    "pwm_frequency_khz":     { "index": "0x3009", "type": "u32" },
+    "motor_direction":       { "index": "0x300C", "type": "u32", "_values": "0 CCW, 1 CW" },
+    "speed_limit":           { "index": "0x3011", "type": "i32", "_unit": "rpm" },
+    "feedback_mode":         { "index": "0x3013", "type": "u32", "_values": "0 sensorless, 1 encoders, 2 hall, 3 zsft" },
+    "motor_type":            { "index": "0x3015", "type": "u32", "_values": "0 DC brushed, 1 BLDC/PMSM, 2 ACIM, 3 BLDC ultrafast" },
+    "control_mode":          { "index": "0x3016", "type": "u32", "_values": "0 speed, 1 torque, 2 position" },
+    "bus_voltage":           { "index": "0x3031", "type": "q17", "_unit": "V" },
+    "dc_motor_current":      { "index": "0x3032", "type": "q17", "_unit": "A" },
+    "speed_feedback":        { "index": "0x3036", "type": "i32", "_unit": "rpm" },
+    "position_feedback":     { "index": "0x3037", "type": "i32", "_unit": "counts" },
+    "board_temperature":     { "index": "0x3039", "type": "q17", "_unit": "C" },
+    "firmware_version":      { "index": "0x303A", "type": "u32" },
+    "hardware_version":      { "index": "0x303B", "type": "u32" },
+
+    "_comment_tpdo": "TPDO parameters: sub 1 = COB-ID (0x280..0x2FF) | 0x80000000 enable, sub 2 = send every N SYNCs (1..11).",
+    "tpdo_position_cobid":   { "index": "0x1814", "sub": 1, "type": "u32" },
+    "tpdo_position_sync":    { "index": "0x1814", "sub": 2, "type": "u32" },
+    "tpdo_speed_cobid":      { "index": "0x1815", "sub": 1, "type": "u32" },
+    "tpdo_speed_sync":       { "index": "0x1815", "sub": 2, "type": "u32" },
+    "tpdo_iq_cobid":         { "index": "0x1816", "sub": 1, "type": "u32" },
+    "tpdo_iq_sync":          { "index": "0x1816", "sub": 2, "type": "u32" }
+  },
+
+  "configure": [
+    { "object": "command_mode",      "value": 1,   "verify": true },
+    { "object": "drive_enable",      "value": 0 },
+    { "object": "torque_reference",  "value": 0 },
+    { "object": "speed_reference",   "value": 0 },
+    { "object": "motor_type",        "value": 0,   "verify": true, "_comment": "DC brushed. The PICO ships as BLDC/PMSM." },
+    { "object": "pwm_frequency_khz", "value": 20 },
+    { "object": "current_limit",     "value": 2.0, "verify": true },
+    { "object": "feedback_mode",     "value": 0,   "verify": true },
+    { "object": "control_mode",      "value": 1,   "verify": true, "_comment": "torque (current) control" },
+    { "object": "speed_limit",       "value": 4000 },
+    { "object": "motor_identification", "value": 1, "wait_ms": 2000, "skip": true,
+      "_comment": "Measures R/L and tunes the current loop; the motor twitches. Enable once the door is safe to move." },
+    { "object": "tpdo_position_cobid", "value": "0x80000281" },
+    { "object": "tpdo_position_sync",  "value": 1 },
+    { "object": "tpdo_speed_cobid",    "value": "0x80000282" },
+    { "object": "tpdo_speed_sync",     "value": 1 }
+  ],
+
+  "run": [
+    { "object": "drive_enable",     "value": 1 },
+    { "object": "motor_direction",  "value": 1 },
+    { "object": "torque_reference", "value": 0.5, "_comment": "A. RUN applies this fixed torque for now." }
+  ],
+
+  "stop": [
+    { "object": "torque_reference", "value": 0 },
+    { "object": "drive_enable",     "value": 0 }
+  ],
+
+  "status": { "object": "drive_enable", "running_value": 1 },
+
+  "alive_object": "firmware_version",
+
+  "device_info": {
+    "_comment": "The PICO's 0x1018 identity object is not documented in SOLO's library, so firmware/hardware versions are used.",
+    "vendor_id":    { "value": 0 },
+    "product_code": { "object": "hardware_version" },
+    "revision":     { "object": "firmware_version" },
+    "serial":       { "value": 0 }
+  },
+
+  "telemetry": [
+    { "kind": "position", "source": "tpdo", "cob_id": "0x281", "type": "i32", "scale": 1,
+      "_unit": "encoder counts (meaningless without an encoder)" },
+    { "kind": "speed",    "source": "tpdo", "cob_id": "0x282", "type": "i32", "scale": 1, "_unit": "rpm" },
+    { "kind": "current",  "source": "sdo_poll", "object": "dc_motor_current", "period_ms": 20, "scale": 1000,
+      "_unit": "mA on the socket (CurrentEvent is int16). Brushed motor current Im is not PDO-mappable, so it is polled." },
+    { "kind": "current",  "source": "tpdo", "cob_id": "0x283", "type": "q17", "scale": 1000, "skip": true,
+      "_comment": "Iq TPDO (3-phase motors). Use instead of the poll above for BLDC/PMSM, and enable tpdo_iq_* in configure." }
+  ]
+}

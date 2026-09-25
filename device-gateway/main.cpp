@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -12,6 +13,7 @@
 #include <unistd.h>
 
 #include "canopen/canopen_translator.h"
+#include "canopen/device_profile.h"
 #include "device_translator.h"
 #include "message.h"
 #include "unix_socket.h"
@@ -24,6 +26,37 @@ constexpr const char* kSocketPath = "/tmp/wizard-backend.sock";
 constexpr const char* kDefaultCanInterface = "vcan0";
 constexpr auto kHeartbeatInterval = std::chrono::milliseconds(500);
 constexpr auto kReconnectInterval = std::chrono::seconds(2);
+
+#ifndef WIZARD_DEFAULT_DEVICE_PROFILE
+#define WIZARD_DEFAULT_DEVICE_PROFILE "/etc/wizard/devices/solopico.json"
+#endif
+
+bool file_exists(const std::string& path) {
+    struct stat st{};
+    return ::stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
+// Directory of the running executable, e.g. /home/me/wizard/build.
+std::string exe_dir() {
+    char buf[4096];
+    const ssize_t n = ::readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return ".";
+    std::string path(buf, static_cast<size_t>(n));
+    const auto slash = path.rfind('/');
+    return slash == std::string::npos ? "." : path.substr(0, slash);
+}
+
+// Device profile lookup, first match wins:
+//   1. argv[2]                                   (explicit)
+//   2. $WIZARD_DEVICE_PROFILE                    (systemd override)
+//   3. WIZARD_DEFAULT_DEVICE_PROFILE             (installed, /etc/wizard/devices/)
+//   4. <exe dir>/devices/solopico.json           (native build tree)
+std::string resolve_profile_path(int argc, char** argv) {
+    if (argc > 2) return argv[2];
+    if (const char* env = std::getenv("WIZARD_DEVICE_PROFILE")) return env;
+    if (file_exists(WIZARD_DEFAULT_DEVICE_PROFILE)) return WIZARD_DEFAULT_DEVICE_PROFILE;
+    return exe_dir() + "/devices/solopico.json";
+}
 
 uint64_t now_us() {
     timeval tv{};
@@ -189,9 +222,21 @@ void run_session(DeviceTranslator& translator) {
 
 int main(int argc, char** argv) {
     const std::string can_iface = argc > 1 ? argv[1] : kDefaultCanInterface;
+    const std::string profile_path = resolve_profile_path(argc, argv);
+
+    std::cout << "loading device profile " << profile_path << "\n";
+    DeviceProfile profile;
+    try {
+        profile = load_device_profile(profile_path);
+    } catch (const ProfileError& e) {
+        // Nothing sensible can run without a valid profile; exit so systemd
+        // shows the reason instead of a gateway that silently does nothing.
+        std::cerr << e.what() << "\n";
+        return 1;
+    }
 
     std::cout << "opening CAN interface " << can_iface << "\n";
-    std::unique_ptr<DeviceTranslator> translator = std::make_unique<CanopenTranslator>(can_iface);
+    std::unique_ptr<DeviceTranslator> translator = std::make_unique<CanopenTranslator>(can_iface, profile);
     std::cout << "CAN interface ready\n";
 
     // Reconnect forever: wizard-engine restarting must not take the gateway
