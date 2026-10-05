@@ -32,6 +32,13 @@ struct WriteStep {
     double value = 0.0;
     bool verify = false;    // read back and compare after writing
     uint32_t wait_ms = 0;   // sleep after the write (e.g. motor identification)
+    uint32_t ramp_ms = 0;   // >0: move from the current value to 'value' over this
+                            // time in small steps (e.g. torque 0 -> 2 A -> 0)
+    double ramp_rate = 0;   // >0: same, at this rate in object units per second
+                            // (e.g. 0.5 = 0.5 A/s). Exclusive with ramp_ms.
+    std::string ramp_start_object;  // optional: start the ramp from |this object|
+                            // when it is smaller than the current value (e.g. the
+                            // measured current when the reference is unreachable)
 };
 
 enum class TelemetrySource { Tpdo, SdoPoll };

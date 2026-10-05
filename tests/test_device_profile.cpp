@@ -40,18 +40,28 @@ TEST(DeviceProfile, ShippedSoloPicoProfileLoads) {
     EXPECT_EQ(p.name, "SOLO PICO");
     EXPECT_EQ(p.node_id, 1);
     EXPECT_FALSE(p.sdo_size_indicated);
-    EXPECT_EQ(p.sync_period_ms, 10u);
+    EXPECT_EQ(p.sync_period_ms, 0u);  // SYNC off: it made the real PICO stop answering SDOs
     EXPECT_EQ(p.object("current_limit").index, 0x3003);
     EXPECT_EQ(p.object("current_limit").type, ValueType::Q17);
     EXPECT_EQ(p.object("tpdo_position_cobid").subindex, 1);
 
     // The skipped identification step and skipped Iq channel are not loaded.
     for (const auto& s : p.configure) EXPECT_NE(s.object, "motor_identification");
-    ASSERT_EQ(p.telemetry.size(), 3u);
-    EXPECT_EQ(p.telemetry[0].cob_id, 0x281u);
+    ASSERT_EQ(p.telemetry.size(), 3u);  // skipped TPDO variants not loaded
+    for (const auto& ch : p.telemetry) EXPECT_EQ(ch.source, TelemetrySource::SdoPoll);
+    EXPECT_EQ(p.telemetry[0].object, "position_feedback");
     EXPECT_EQ(p.telemetry[1].kind, TelemetryKind::Velocity);
-    EXPECT_EQ(p.telemetry[2].source, TelemetrySource::SdoPoll);
     EXPECT_DOUBLE_EQ(p.telemetry[2].scale, 1000.0);
+
+    // RUN ramps the torque up, STOP ramps it down before disabling the drive.
+    ASSERT_FALSE(p.run.empty());
+    EXPECT_EQ(p.run.back().object, "torque_reference");
+    EXPECT_DOUBLE_EQ(p.run.back().ramp_rate, 0.5);
+    ASSERT_GE(p.stop.size(), 2u);
+    EXPECT_EQ(p.stop.front().object, "torque_reference");
+    EXPECT_DOUBLE_EQ(p.stop.front().ramp_rate, 0.5);
+    EXPECT_EQ(p.stop.front().ramp_start_object, "dc_motor_current");
+    EXPECT_EQ(p.stop.back().object, "drive_enable");
 }
 
 TEST(DeviceProfile, MinimalProfileParses) {
@@ -68,6 +78,36 @@ TEST(DeviceProfile, HexStringStepValue) {
         minimal_profile("", R"([{"object": "enable", "value": "0x80000281"}])"));
     ASSERT_EQ(p.run.size(), 1u);
     EXPECT_EQ(encode_value(ValueType::U32, p.run[0].value), 0x80000281u);
+}
+
+TEST(DeviceProfile, RampMsParsed) {
+    DeviceProfile p = parse_device_profile(
+        minimal_profile("", R"([{"object": "enable", "value": 1, "ramp_ms": 500}])"));
+    ASSERT_EQ(p.run.size(), 1u);
+    EXPECT_EQ(p.run[0].ramp_ms, 500u);
+    EXPECT_THROW(parse_device_profile(
+                     minimal_profile("", R"([{"object": "enable", "value": 1, "ramp_ms": 70000}])")),
+                 ProfileError);
+}
+
+TEST(DeviceProfile, RampRateAndStartObject) {
+    DeviceProfile p = parse_device_profile(minimal_profile(
+        "", R"([{"object": "enable", "value": 1, "ramp_rate": 0.5, "ramp_start_object": "fw"}])"));
+    EXPECT_DOUBLE_EQ(p.run[0].ramp_rate, 0.5);
+    EXPECT_EQ(p.run[0].ramp_start_object, "fw");
+    // both ramp kinds at once, a negative rate, or a start object without a ramp: errors
+    EXPECT_THROW(parse_device_profile(minimal_profile(
+                     "", R"([{"object": "enable", "value": 1, "ramp_ms": 10, "ramp_rate": 1}])")),
+                 ProfileError);
+    EXPECT_THROW(parse_device_profile(minimal_profile(
+                     "", R"([{"object": "enable", "value": 1, "ramp_rate": -1}])")),
+                 ProfileError);
+    EXPECT_THROW(parse_device_profile(minimal_profile(
+                     "", R"([{"object": "enable", "value": 1, "ramp_start_object": "fw"}])")),
+                 ProfileError);
+    EXPECT_THROW(parse_device_profile(minimal_profile(
+                     "", R"([{"object": "enable", "value": 1, "ramp_rate": 1, "ramp_start_object": "nope"}])")),
+                 ProfileError);
 }
 
 TEST(DeviceProfile, TypoInKeyIsAnError) {

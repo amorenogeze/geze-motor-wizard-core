@@ -103,6 +103,9 @@ std::optional<TelemetryKind> to_kind(const std::string& s) {
     return std::nullopt;
 }
 
+std::string get_object_ref(const json& obj, const std::string& key, const std::string& where,
+                           const DeviceProfile& p, Checker& c);
+
 std::vector<WriteStep> parse_steps(const json& root, const std::string& key,
                                    const DeviceProfile& p, Checker& c) {
     std::vector<WriteStep> steps;
@@ -121,7 +124,8 @@ std::vector<WriteStep> parse_steps(const json& root, const std::string& key,
             c.error(where, "must be an object");
             continue;
         }
-        check_keys(s, {"object", "value", "verify", "wait_ms", "skip"}, where, c);
+        check_keys(s, {"object", "value", "verify", "wait_ms", "ramp_ms", "ramp_rate", "ramp_start_object", "skip"},
+                   where, c);
         if (get_bool(s, "skip", false, where, c)) continue;  // kept in the file, not executed
 
         WriteStep step;
@@ -149,6 +153,19 @@ std::vector<WriteStep> parse_steps(const json& root, const std::string& key,
         }
         step.verify = get_bool(s, "verify", false, where, c);
         if (auto w = get_uint(s, "wait_ms", where, c, 60000, false)) step.wait_ms = static_cast<uint32_t>(*w);
+        if (auto r = get_uint(s, "ramp_ms", where, c, 60000, false)) step.ramp_ms = static_cast<uint32_t>(*r);
+        if (s.contains("ramp_rate")) {
+            if (s["ramp_rate"].is_number() && s["ramp_rate"].get<double>() > 0)
+                step.ramp_rate = s["ramp_rate"].get<double>();
+            else
+                c.error(where, "'ramp_rate' must be a number > 0 (units per second)");
+        }
+        if (step.ramp_ms && step.ramp_rate > 0) c.error(where, "use either 'ramp_ms' or 'ramp_rate', not both");
+        if (s.contains("ramp_start_object")) {
+            step.ramp_start_object = get_object_ref(s, "ramp_start_object", where, p, c);
+            if (!step.ramp_ms && step.ramp_rate <= 0)
+                c.error(where, "'ramp_start_object' needs 'ramp_ms' or 'ramp_rate'");
+        }
         steps.push_back(step);
     }
     return steps;

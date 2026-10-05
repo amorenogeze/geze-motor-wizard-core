@@ -11,9 +11,9 @@
     "_comment": "SOLO writes with cs 0x22 and answers reads with 0x42. read_subindex: set a number to force the subindex on reads if the PICO aborts plain reads."
   },
 
-  "sync_period_ms": 10,
+  "sync_period_ms": 0,
   "telemetry_only_while_running": true,
-  "_comment_sync": "PICO TPDOs are synchronous: the gateway sends SYNC (0x080) every sync_period_ms, only while RUNNING.",
+  "_comment_sync": "SYNC OFF. On the real PICO (fw 0x0000B040), SYNC every 10 ms made it stop answering SDOs while the motor ran, so STOP could not get through (2026-10-05). Telemetry is SDO-polled instead. TPDOs stay configured for a later retry with a slower SYNC.",
 
   "objects": {
     "_comment": "type q17 = SOLO float, value * 131072 on the wire.",
@@ -69,11 +69,13 @@
   "run": [
     { "object": "drive_enable",     "value": 1 },
     { "object": "motor_direction",  "value": 1 },
-    { "object": "torque_reference", "value": 0.5, "_comment": "A. RUN applies this fixed torque for now." }
+    { "object": "torque_reference", "value": 2.0, "ramp_rate": 0.5,
+      "_comment": "A. RUN ramps the torque current up at ramp_rate A/s (0 -> 2.0 A in 4 s, steps every 20 ms). Keep value <= current_limit." }
   ],
 
   "stop": [
-    { "object": "torque_reference", "value": 0 },
+    { "object": "torque_reference", "value": 0, "ramp_rate": 0.5, "ramp_start_object": "dc_motor_current",
+      "_comment": "Ramp down at 0.5 A/s, starting from the MEASURED current when it is lower than the reference (unloaded motor). If a write fails, 0 is written directly." },
     { "object": "drive_enable",     "value": 0 }
   ],
 
@@ -90,11 +92,15 @@
   },
 
   "telemetry": [
-    { "kind": "position", "source": "tpdo", "cob_id": "0x281", "type": "i32", "scale": 1,
+    { "kind": "position", "source": "sdo_poll", "object": "position_feedback", "period_ms": 100, "scale": 1,
       "_unit": "encoder counts (meaningless without an encoder)" },
-    { "kind": "speed",    "source": "tpdo", "cob_id": "0x282", "type": "i32", "scale": 1, "_unit": "rpm" },
-    { "kind": "current",  "source": "sdo_poll", "object": "dc_motor_current", "period_ms": 20, "scale": 1000,
+    { "kind": "speed",    "source": "sdo_poll", "object": "speed_feedback", "period_ms": 100, "scale": 1, "_unit": "rpm" },
+    { "kind": "current",  "source": "sdo_poll", "object": "dc_motor_current", "period_ms": 100, "scale": 1000,
       "_unit": "mA on the socket (CurrentEvent is int16). Brushed motor current Im is not PDO-mappable, so it is polled." },
+    { "kind": "position", "source": "tpdo", "cob_id": "0x281", "type": "i32", "scale": 1, "skip": true,
+      "_comment": "TPDO variant: needs sync_period_ms > 0. Off, see _comment_sync." },
+    { "kind": "speed",    "source": "tpdo", "cob_id": "0x282", "type": "i32", "scale": 1, "skip": true,
+      "_comment": "TPDO variant: needs sync_period_ms > 0. Off, see _comment_sync." },
     { "kind": "current",  "source": "tpdo", "cob_id": "0x283", "type": "q17", "scale": 1000, "skip": true,
       "_comment": "Iq TPDO (3-phase motors). Use instead of the poll above for BLDC/PMSM, and enable tpdo_iq_* in configure." }
   ]

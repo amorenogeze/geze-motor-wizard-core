@@ -1,84 +1,376 @@
-#pragma once
+#include "canopen_translator.h"
 
-#include <atomic>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <thread>
-
-#include "canopen_client.h"
-#include "device_profile.h"
-#include "../device_translator.h"
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <sstream>
 
 namespace wizard {
 
-// CANopen implementation of DeviceTranslator. Protocol mechanics live in
-// CanopenClient; everything device-specific (objects, startup configuration,
-// run/stop sequences, telemetry mapping and scaling) comes from a
-// DeviceProfile loaded from JSON (canopen/devices/<device>.json).
-//
-// Threads owned here:
-//   pdo_thread_  : decodes TPDOs into TelemetrySamples (always running)
-//   sync_thread_ : sends SYNC every profile.sync_period_ms (if > 0)
-//   poll_thread_ : reads "sdo_poll" telemetry channels (if any)
-// With telemetry_only_while_running, SYNC and polling pause while STOPPED,
-// so no telemetry flows until RUN (same behaviour as the V1 simulator).
-class CanopenTranslator : public DeviceTranslator {
-public:
-    CanopenTranslator(const std::string& iface, DeviceProfile profile);
-    // For tests: use an already-constructed client.
-    CanopenTranslator(std::unique_ptr<CanopenClient> client, DeviceProfile profile);
-    ~CanopenTranslator() override;
+namespace {
 
-    std::optional<DeviceInfo> read_device_info() override;
-    bool set_run_stop(bool run) override;
-    std::optional<bool> read_run_stop_status() override;
-    std::optional<TelemetrySample> read_next_telemetry() override;
-    TelemetryWait wait_next_telemetry(std::chrono::milliseconds timeout, TelemetrySample& out) override;
+using Clock = std::chrono::steady_clock;
 
-    // Reads profile.alive_object. The first successful probe after the node
-    // (re)appears also applies profile.configure, so a power-cycled node is
-    // reconfigured automatically.
-    bool probe_alive() override;
+std::string describe(const ObjectDef& o) {
+    std::ostringstream ss;
+    ss << o.name << " (0x" << std::hex << std::uppercase << std::setw(4) << std::setfill('0') << o.index
+       << ":" << std::setw(2) << static_cast<int>(o.subindex) << ")";
+    return ss.str();
+}
 
-    // Applies profile.configure. Public so tests (and later the engine's
-    // CONFIGURATOR) can trigger it explicitly.
-    bool configure();
+std::string describe(const SdoResult& r) {
+    if (r.timeout) return "timeout";
+    if (r.abort_code) {
+        std::ostringstream ss;
+        ss << "SDO abort 0x" << std::hex << std::setw(8) << std::setfill('0') << r.abort_code;
+        return ss.str();
+    }
+    return "unexpected response";
+}
 
-    bool is_configured() const { return configured_; }
-    bool is_running() const { return running_; }
-    const DeviceProfile& profile() const { return profile_; }
+uint32_t le32(const uint8_t* p) {
+    return static_cast<uint32_t>(p[0]) | (static_cast<uint32_t>(p[1]) << 8) |
+           (static_cast<uint32_t>(p[2]) << 16) | (static_cast<uint32_t>(p[3]) << 24);
+}
 
-private:
-    void start_threads();
-    bool configure_locked();
-    bool run_steps(const std::vector<WriteStep>& steps, const char* sequence);
-    bool run_stop_steps(const char* sequence);
-    bool write_step(const WriteStep& step);
-    std::optional<double> read_object(const std::string& name);
-    std::optional<uint32_t> read_object_raw(const ObjectDef& obj);
-    std::optional<TelemetrySample> make_sample(const TelemetryChannel& ch, uint64_t ts, double decoded);
-    bool telemetry_enabled() const;
+// Two values are "the same setting" if they encode to the same raw value.
+bool same_value(ValueType type, double a, double b) {
+    try {
+        return encode_value(type, a) == encode_value(type, b);
+    } catch (const ProfileError&) {
+        return false;
+    }
+}
 
-    void pdo_loop();
-    void sync_loop();
-    void poll_loop();
+}  // namespace
 
-    DeviceProfile profile_;
-    std::unique_ptr<CanopenClient> client_;
-    std::map<uint32_t, TelemetryChannel> tpdo_channels_;
-    std::vector<TelemetryChannel> poll_channels_;
+CanopenTranslator::CanopenTranslator(const std::string& iface, DeviceProfile profile)
+    : CanopenTranslator(std::make_unique<CanopenClient>(iface, profile.node_id), profile) {}
 
-    ThreadSafeQueue<TelemetrySample> telemetry_;
+CanopenTranslator::CanopenTranslator(std::unique_ptr<CanopenClient> client, DeviceProfile profile)
+    : profile_(std::move(profile)), client_(std::move(client)) {
+    client_->set_sdo_timeout(std::chrono::milliseconds(profile_.sdo_timeout_ms));
 
-    std::mutex sequence_mutex_;  // configure / run / stop never interleave
-    std::atomic<bool> configured_{false};
-    std::atomic<bool> running_{false};
-    std::atomic<bool> stop_{false};
+    std::set<uint32_t> cob_ids;
+    for (const auto& ch : profile_.telemetry) {
+        if (ch.source == TelemetrySource::Tpdo) {
+            tpdo_channels_[ch.cob_id] = ch;
+            cob_ids.insert(ch.cob_id);
+        } else {
+            poll_channels_.push_back(ch);
+        }
+    }
+    client_->set_tpdo_cob_ids(cob_ids);
 
-    std::thread pdo_thread_;
-    std::thread sync_thread_;
-    std::thread poll_thread_;
-};
+    std::cout << "device profile '" << profile_.name << "': node " << static_cast<int>(profile_.node_id)
+              << ", " << tpdo_channels_.size() << " TPDO + " << poll_channels_.size()
+              << " polled telemetry channel(s), SYNC "
+              << (profile_.sync_period_ms ? std::to_string(profile_.sync_period_ms) + " ms" : "off") << "\n";
+    start_threads();
+}
+
+CanopenTranslator::~CanopenTranslator() {
+    stop_ = true;
+    if (sync_thread_.joinable()) sync_thread_.join();
+    if (poll_thread_.joinable()) poll_thread_.join();
+    if (pdo_thread_.joinable()) pdo_thread_.join();
+    telemetry_.close();
+}
+
+void CanopenTranslator::start_threads() {
+    pdo_thread_ = std::thread(&CanopenTranslator::pdo_loop, this);
+    if (profile_.sync_period_ms > 0) sync_thread_ = std::thread(&CanopenTranslator::sync_loop, this);
+    if (!poll_channels_.empty()) poll_thread_ = std::thread(&CanopenTranslator::poll_loop, this);
+}
+
+// ---------------------------------------------------------------- SDO helpers
+
+std::optional<uint32_t> CanopenTranslator::read_object_raw(const ObjectDef& obj) {
+    const uint8_t sub = profile_.sdo_read_subindex.value_or(obj.subindex);
+    auto r = client_->sdo_read(obj.index, sub);
+    if (!r.ok) {
+        std::cerr << "read " << describe(obj) << " failed: " << describe(r) << "\n";
+        return std::nullopt;
+    }
+    return r.value;
+}
+
+std::optional<double> CanopenTranslator::read_object(const std::string& name) {
+    const ObjectDef& obj = profile_.object(name);
+    auto raw = read_object_raw(obj);
+    if (!raw) return std::nullopt;
+    return decode_value(obj.type, *raw);
+}
+
+bool CanopenTranslator::write_value(const ObjectDef& obj, double value) {
+    const uint32_t raw = encode_value(obj.type, value);
+    auto r = client_->sdo_write(obj.index, obj.subindex, raw, value_size(obj.type), profile_.sdo_size_indicated);
+    if (!r.ok) {
+        std::cerr << "write " << describe(obj) << " = " << value << " failed: " << describe(r) << "\n";
+        return false;
+    }
+    return true;
+}
+
+// Moves obj from its current value to step.value in steps of kRampStep, over
+// step.ramp_ms or at step.ramp_rate units/s. The final write is always the
+// exact target. If the current value cannot be read or an intermediate write
+// fails, it falls back to writing the target directly: for a ramp down to 0
+// that still stops, which matters more than smoothness.
+bool CanopenTranslator::ramp_to(const ObjectDef& obj, const WriteStep& step) {
+    constexpr auto kRampStep = std::chrono::milliseconds(20);
+    const double target = step.value;
+    auto start = read_object(obj.name);
+    if (!start) {
+        std::cerr << "ramp " << describe(obj) << ": current value unknown, writing target directly\n";
+        return write_value(obj, target);
+    }
+    // e.g. torque reference 2.0 A but only 0.15 A flows (motor at full speed):
+    // ramp down from what really flows, otherwise the ramp changes nothing
+    // until its very end.
+    if (!step.ramp_start_object.empty()) {
+        if (auto actual = read_object(step.ramp_start_object)) {
+            const double a = std::fabs(*actual);
+            if (a < std::fabs(*start)) start = std::copysign(a, *start);
+        }
+    }
+    const double duration_ms = step.ramp_rate > 0 ? std::fabs(target - *start) / step.ramp_rate * 1000.0
+                                                  : static_cast<double>(step.ramp_ms);
+    const bool integral = obj.type != ValueType::Q17;
+    // A ramp away from zero (e.g. torque up on RUN) gives way to a STOP that
+    // is waiting for sequence_mutex_; a ramp towards zero is never interrupted.
+    const bool away_from_zero = std::fabs(target) > std::fabs(*start);
+
+    // Each value comes from the elapsed time, not from a step count: every SDO
+    // write takes a round trip to the node, so "write, then sleep 20 ms" made a
+    // 4 s ramp last ~20 s on the real PICO. Now a slow node just gets fewer,
+    // bigger steps and the ramp keeps its duration.
+    const auto t0 = Clock::now();
+    const auto duration = std::chrono::duration<double, std::milli>(duration_ms);
+    auto next = t0 + kRampStep;
+    while (true) {
+        std::this_thread::sleep_until(next);
+        next += kRampStep;
+        if (Clock::now() > next) next = Clock::now() + kRampStep;  // behind: no catch-up burst
+        const double done = std::chrono::duration<double, std::milli>(Clock::now() - t0) / duration;
+        if (done >= 1.0) break;
+        if (away_from_zero && stop_requested_) {
+            std::cerr << "ramp " << describe(obj) << " interrupted by STOP\n";
+            return false;
+        }
+        double v = *start + (target - *start) * done;
+        if (integral) v = std::round(v);
+        if (!write_value(obj, v)) return write_value(obj, target);
+    }
+    return write_value(obj, target);
+}
+
+bool CanopenTranslator::write_step(const WriteStep& step) {
+    const ObjectDef& obj = profile_.object(step.object);
+    const bool ramp = step.ramp_ms || step.ramp_rate > 0;
+    const bool ok = ramp ? ramp_to(obj, step) : write_value(obj, step.value);
+    if (!ok) return false;
+    if (step.verify) {
+        auto back = read_object(step.object);
+        if (!back) return false;
+        if (!same_value(obj.type, *back, step.value)) {
+            std::cerr << "verify " << describe(obj) << ": wrote " << step.value << ", read back " << *back
+                      << "\n";
+            return false;
+        }
+    }
+    if (step.wait_ms) std::this_thread::sleep_for(std::chrono::milliseconds(step.wait_ms));
+    return true;
+}
+
+bool CanopenTranslator::run_steps(const std::vector<WriteStep>& steps, const char* sequence) {
+    for (const auto& step : steps) {
+        if (stop_) return false;
+        if (!write_step(step)) {
+            std::cerr << sequence << " sequence aborted at '" << step.object << "'\n";
+            return false;
+        }
+    }
+    return true;
+}
+
+// Like run_steps, but never gives up early: a failed "torque = 0" must not
+// prevent "drive disable". Used for every stop sequence.
+bool CanopenTranslator::run_stop_steps(const char* sequence) {
+    bool ok = true;
+    for (const auto& step : profile_.stop) {
+        if (!write_step(step)) {
+            std::cerr << sequence << ": step '" << step.object << "' failed, continuing\n";
+            ok = false;
+        }
+    }
+    return ok;
+}
+
+// ---------------------------------------------------------------- configure / run / stop
+
+bool CanopenTranslator::configure() {
+    std::lock_guard<std::mutex> lock(sequence_mutex_);
+    return configure_locked();
+}
+
+bool CanopenTranslator::configure_locked() {
+    running_ = false;
+    std::cout << "configuring " << profile_.name << " (" << profile_.configure.size() << " steps)\n";
+    const bool ok = run_steps(profile_.configure, "configure");
+    configured_ = ok;
+    std::cout << "configure " << (ok ? "done" : "FAILED") << "\n";
+    return ok;
+}
+
+bool CanopenTranslator::set_run_stop(bool run) {
+    if (!run) stop_requested_ = true;  // lets a RUN ramp in progress give way
+    std::lock_guard<std::mutex> lock(sequence_mutex_);
+    if (!run) stop_requested_ = false;
+
+    // STOP never depends on configure: it must be attempted even if the node
+    // was never configured or configure is failing (e.g. a rejected step).
+    if (!run) {
+        running_ = false;  // pause SYNC/polling first
+        return run_stop_steps("stop");
+    }
+
+    if (!configured_ && !configure_locked()) return false;
+
+    if (run_steps(profile_.run, "run")) {
+        running_ = true;
+        return true;
+    }
+    // Half-applied RUN: bring the device back to a known stopped state.
+    run_stop_steps("stop (after failed run)");
+    running_ = false;
+    return false;
+}
+
+std::optional<bool> CanopenTranslator::read_run_stop_status() {
+    const ObjectDef& obj = profile_.object(profile_.status_object);
+    auto value = read_object(profile_.status_object);
+    if (!value) return std::nullopt;
+    return same_value(obj.type, *value, profile_.status_running_value);
+}
+
+std::optional<DeviceInfo> CanopenTranslator::read_device_info() {
+    auto field = [&](const InfoField& f) -> std::optional<uint32_t> {
+        if (!f.object) return f.value;
+        return read_object_raw(profile_.object(*f.object));
+    };
+    auto vendor = field(profile_.vendor_id);
+    if (!vendor) return std::nullopt;
+    auto product = field(profile_.product_code);
+    if (!product) return std::nullopt;
+    auto revision = field(profile_.revision);
+    if (!revision) return std::nullopt;
+    auto serial = field(profile_.serial);
+    if (!serial) return std::nullopt;
+    return DeviceInfo{*vendor, *product, *revision, *serial};
+}
+
+bool CanopenTranslator::probe_alive() {
+    const ObjectDef& obj = profile_.object(profile_.alive_object);
+    const uint8_t sub = profile_.sdo_read_subindex.value_or(obj.subindex);
+    const bool alive = client_->sdo_read(obj.index, sub).ok;  // silent: polled every 500 ms
+
+    if (!alive) {
+        if (configured_) std::cerr << profile_.name << " not answering, will reconfigure when it returns\n";
+        configured_ = false;
+        running_ = false;
+        return false;
+    }
+    if (!configured_) configure();
+    return true;
+}
+
+// ---------------------------------------------------------------- telemetry
+
+bool CanopenTranslator::telemetry_enabled() const {
+    return running_ || !profile_.telemetry_only_while_running;
+}
+
+std::optional<TelemetrySample> CanopenTranslator::make_sample(const TelemetryChannel& ch, uint64_t ts,
+                                                              double decoded) {
+    double v = std::round(decoded * ch.scale);
+    // CurrentEvent carries an int16 on the socket.
+    const double lo = ch.kind == TelemetryKind::Current ? std::numeric_limits<int16_t>::min()
+                                                        : std::numeric_limits<int32_t>::min();
+    const double hi = ch.kind == TelemetryKind::Current ? std::numeric_limits<int16_t>::max()
+                                                        : std::numeric_limits<int32_t>::max();
+    v = std::clamp(v, lo, hi);
+    return TelemetrySample{ts, ch.kind, static_cast<int32_t>(v)};
+}
+
+std::optional<TelemetrySample> CanopenTranslator::read_next_telemetry() { return telemetry_.pop(); }
+
+TelemetryWait CanopenTranslator::wait_next_telemetry(std::chrono::milliseconds timeout,
+                                                     TelemetrySample& out) {
+    if (auto s = telemetry_.pop_for(timeout)) {
+        out = *s;
+        return TelemetryWait::Sample;
+    }
+    return telemetry_.is_closed() ? TelemetryWait::Closed : TelemetryWait::Timeout;
+}
+
+void CanopenTranslator::pdo_loop() {
+    while (!stop_) {
+        auto frame = client_->read_next_pdo(std::chrono::milliseconds(200));
+        if (!frame) {
+            if (!client_->is_open()) break;  // CAN socket died: unrecoverable
+            continue;
+        }
+        auto it = tpdo_channels_.find(frame->cob_id);
+        if (it == tpdo_channels_.end() || !telemetry_enabled()) continue;
+        const TelemetryChannel& ch = it->second;
+        if (frame->dlc < value_size(ch.type)) continue;
+
+        uint8_t bytes[4] = {0, 0, 0, 0};
+        std::copy(frame->data, frame->data + std::min<uint8_t>(frame->dlc, 4), bytes);
+        if (auto s = make_sample(ch, frame->timestamp_us, decode_value(ch.type, le32(bytes)))) telemetry_.push(*s);
+    }
+    telemetry_.close();  // read_next_telemetry -> nullopt, gateway reports the error
+}
+
+void CanopenTranslator::sync_loop() {
+    const auto period = std::chrono::milliseconds(profile_.sync_period_ms);
+    auto next = Clock::now();
+    while (!stop_) {
+        next += period;
+        std::this_thread::sleep_until(next);
+        if (Clock::now() > next + 10 * period) next = Clock::now();  // fell far behind: no burst
+        if (telemetry_enabled()) client_->send_sync();
+    }
+}
+
+void CanopenTranslator::poll_loop() {
+    std::vector<Clock::time_point> due(poll_channels_.size(), Clock::now());
+    while (!stop_) {
+        const auto earliest = *std::min_element(due.begin(), due.end());
+        std::this_thread::sleep_until(std::min(earliest, Clock::now() + std::chrono::milliseconds(100)));
+        if (stop_) break;
+
+        const auto now = Clock::now();
+        for (size_t i = 0; i < poll_channels_.size(); ++i) {
+            if (now < due[i]) continue;
+            const TelemetryChannel& ch = poll_channels_[i];
+            due[i] = now + std::chrono::milliseconds(ch.period_ms);
+            if (!telemetry_enabled()) continue;
+
+            const ObjectDef& obj = profile_.object(ch.object);
+            const uint8_t sub = profile_.sdo_read_subindex.value_or(obj.subindex);
+            auto r = client_->sdo_read(obj.index, sub);
+            if (!r.ok) continue;  // heartbeat reports a dead node; don't spam here
+            const uint64_t ts = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            if (auto s = make_sample(ch, ts, decode_value(obj.type, r.value))) telemetry_.push(*s);
+        }
+    }
+}
 
 }  // namespace wizard

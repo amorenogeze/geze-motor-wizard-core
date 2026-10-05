@@ -105,15 +105,74 @@ std::optional<double> CanopenTranslator::read_object(const std::string& name) {
     return decode_value(obj.type, *raw);
 }
 
-bool CanopenTranslator::write_step(const WriteStep& step) {
-    const ObjectDef& obj = profile_.object(step.object);
-    const uint32_t raw = encode_value(obj.type, step.value);  // validated at load time
-
+bool CanopenTranslator::write_value(const ObjectDef& obj, double value) {
+    const uint32_t raw = encode_value(obj.type, value);
     auto r = client_->sdo_write(obj.index, obj.subindex, raw, value_size(obj.type), profile_.sdo_size_indicated);
     if (!r.ok) {
-        std::cerr << "write " << describe(obj) << " = " << step.value << " failed: " << describe(r) << "\n";
+        std::cerr << "write " << describe(obj) << " = " << value << " failed: " << describe(r) << "\n";
         return false;
     }
+    return true;
+}
+
+// Moves obj from its current value to step.value in steps of kRampStep, over
+// step.ramp_ms or at step.ramp_rate units/s. The final write is always the
+// exact target. If the current value cannot be read or an intermediate write
+// fails, it falls back to writing the target directly: for a ramp down to 0
+// that still stops, which matters more than smoothness.
+bool CanopenTranslator::ramp_to(const ObjectDef& obj, const WriteStep& step) {
+    constexpr auto kRampStep = std::chrono::milliseconds(20);
+    const double target = step.value;
+    auto start = read_object(obj.name);
+    if (!start) {
+        std::cerr << "ramp " << describe(obj) << ": current value unknown, writing target directly\n";
+        return write_value(obj, target);
+    }
+    // e.g. torque reference 2.0 A but only 0.15 A flows (motor at full speed):
+    // ramp down from what really flows, otherwise the ramp changes nothing
+    // until its very end.
+    if (!step.ramp_start_object.empty()) {
+        if (auto actual = read_object(step.ramp_start_object)) {
+            const double a = std::fabs(*actual);
+            if (a < std::fabs(*start)) start = std::copysign(a, *start);
+        }
+    }
+    const double duration_ms = step.ramp_rate > 0 ? std::fabs(target - *start) / step.ramp_rate * 1000.0
+                                                  : static_cast<double>(step.ramp_ms);
+    const bool integral = obj.type != ValueType::Q17;
+    // A ramp away from zero (e.g. torque up on RUN) gives way to a STOP that
+    // is waiting for sequence_mutex_; a ramp towards zero is never interrupted.
+    const bool away_from_zero = std::fabs(target) > std::fabs(*start);
+
+    // Each value comes from the elapsed time, not from a step count: every SDO
+    // write takes a round trip to the node, so "write, then sleep 20 ms" made a
+    // 4 s ramp last ~20 s on the real PICO. Now a slow node just gets fewer,
+    // bigger steps and the ramp keeps its duration.
+    const auto t0 = Clock::now();
+    const auto duration = std::chrono::duration<double, std::milli>(duration_ms);
+    auto next = t0 + kRampStep;
+    while (true) {
+        std::this_thread::sleep_until(next);
+        next += kRampStep;
+        if (Clock::now() > next) next = Clock::now() + kRampStep;  // behind: no catch-up burst
+        const double done = std::chrono::duration<double, std::milli>(Clock::now() - t0) / duration;
+        if (done >= 1.0) break;
+        if (away_from_zero && stop_requested_) {
+            std::cerr << "ramp " << describe(obj) << " interrupted by STOP\n";
+            return false;
+        }
+        double v = *start + (target - *start) * done;
+        if (integral) v = std::round(v);
+        if (!write_value(obj, v)) return write_value(obj, target);
+    }
+    return write_value(obj, target);
+}
+
+bool CanopenTranslator::write_step(const WriteStep& step) {
+    const ObjectDef& obj = profile_.object(step.object);
+    const bool ramp = step.ramp_ms || step.ramp_rate > 0;
+    const bool ok = ramp ? ramp_to(obj, step) : write_value(obj, step.value);
+    if (!ok) return false;
     if (step.verify) {
         auto back = read_object(step.object);
         if (!back) return false;
@@ -168,7 +227,9 @@ bool CanopenTranslator::configure_locked() {
 }
 
 bool CanopenTranslator::set_run_stop(bool run) {
+    if (!run) stop_requested_ = true;  // lets a RUN ramp in progress give way
     std::lock_guard<std::mutex> lock(sequence_mutex_);
+    if (!run) stop_requested_ = false;
 
     // STOP never depends on configure: it must be attempted even if the node
     // was never configured or configure is failing (e.g. a rejected step).
