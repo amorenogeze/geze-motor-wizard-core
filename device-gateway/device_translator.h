@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <chrono>
 
 namespace wizard {
 
@@ -13,6 +14,8 @@ struct TelemetrySample {
     TelemetryKind kind;
     int32_t value;  // Current only uses the low 16 bits, sign-extended.
 };
+
+enum class TelemetryWait { Sample, Timeout, Closed };
 
 struct DeviceInfo {
     uint32_t vendor_id;
@@ -38,6 +41,13 @@ public:
     // Blocks until the next telemetry sample is available. Nullopt only on
     // unrecoverable transport error.
     virtual std::optional<TelemetrySample> read_next_telemetry() = 0;
+
+    // Like read_next_telemetry, but gives up after 'timeout' so the caller
+    // can check other conditions (e.g. the engine went away while STOPPED,
+    // when no telemetry flows). Sample: 'out' is filled. Closed: transport
+    // error, same meaning as nullopt above.
+    virtual TelemetryWait wait_next_telemetry(std::chrono::milliseconds timeout, 
+            TelemetrySample& out) = 0;
 
     // Pong: just looking for answer no content.
     virtual bool probe_alive() = 0;

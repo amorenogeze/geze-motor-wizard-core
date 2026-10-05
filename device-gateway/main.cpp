@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -9,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/un.h>
+#include <pthread.h>
 #include <thread>
 #include <unistd.h>
 
@@ -119,13 +121,17 @@ Message telemetry_sample_to_message(const TelemetrySample& sample) {
 void telemetry_loop(DeviceTranslator& translator, UnixSocket& engine_sock,
                     std::mutex& send_mutex, std::atomic<bool>& session_active) {
     while (session_active) {
-        auto sample = translator.read_next_telemetry();
-        if (!sample) {
+        // Timed wait: while STOPPED no telemetry arrives, and a blocking read
+        // would never notice that the other loops ended the session.
+        TelemetrySample sample{};
+        const auto r = translator.wait_next_telemetry(std::chrono::milliseconds(200), sample);
+        if (r == TelemetryWait::Timeout) continue;
+        if (r == TelemetryWait::Closed) {
             std::cerr << "telemetry read error, stopping telemetry loop\n";
             break;
         }
         std::lock_guard<std::mutex> lock(send_mutex);
-        if (!engine_sock.send(telemetry_sample_to_message(*sample))) {
+        if (!engine_sock.send(telemetry_sample_to_message(sample))) {
             std::cerr << "wizard-engine disconnected, stopping telemetry loop\n";
             break;
         }
@@ -208,7 +214,10 @@ void run_session(DeviceTranslator& translator) {
         commands.join();
         heartbeat.join();
 
-        std::cout << "session with wizard-engine ended\n";
+        // Nobody can send STOP any more: never leave the motor driven
+        // without a controller attached.
+        std::cout << "session with wizard-engine ended, stopping the motor\n";
+        if (!translator.set_run_stop(false)) std::cerr << "stop after session end failed\n";
 
     } catch (const std::exception& e) {
         // connect_to throws when the engine is not listening yet, which is a
@@ -218,9 +227,29 @@ void run_session(DeviceTranslator& translator) {
     }
 }
 
+// SIGINT/SIGTERM (Ctrl+C, systemctl stop): stop the motor, then exit.
+// The signals are blocked in every thread and received here with sigwait,
+// so the SDO writes run in a normal thread, not inside a signal handler.
+void signal_loop(sigset_t signals, DeviceTranslator* translator) {
+    int sig = 0;
+    if (sigwait(&signals, &sig) != 0) return;
+    std::cout << "signal " << sig << " received, stopping the motor\n";
+    if (!translator->set_run_stop(false)) std::cerr << "stop on shutdown failed\n";
+    std::cout.flush();
+    std::_Exit(0);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Block the shutdown signals before any thread exists so every thread
+    // inherits the mask and only signal_loop receives them.
+    sigset_t signals;
+    sigemptyset(&signals);
+    sigaddset(&signals, SIGINT);
+    sigaddset(&signals, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &signals, nullptr);
+
     const std::string can_iface = argc > 1 ? argv[1] : kDefaultCanInterface;
     const std::string profile_path = resolve_profile_path(argc, argv);
 
@@ -238,6 +267,8 @@ int main(int argc, char** argv) {
     std::cout << "opening CAN interface " << can_iface << "\n";
     std::unique_ptr<DeviceTranslator> translator = std::make_unique<CanopenTranslator>(can_iface, profile);
     std::cout << "CAN interface ready\n";
+
+    std::thread(signal_loop, signals, translator.get()).detach();
 
     // Reconnect forever: wizard-engine restarting must not take the gateway
     // down with it, and must not force the CAN interface to be reopened.

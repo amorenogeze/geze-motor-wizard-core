@@ -138,6 +138,19 @@ bool CanopenTranslator::run_steps(const std::vector<WriteStep>& steps, const cha
     return true;
 }
 
+// Like run_steps, but never gives up early: a failed "torque = 0" must not
+// prevent "drive disable". Used for every stop sequence.
+bool CanopenTranslator::run_stop_steps(const char* sequence) {
+    bool ok = true;
+    for (const auto& step : profile_.stop) {
+        if (!write_step(step)) {
+            std::cerr << sequence << ": step '" << step.object << "' failed, continuing\n";
+            ok = false;
+        }
+    }
+    return ok;
+}
+
 // ---------------------------------------------------------------- configure / run / stop
 
 bool CanopenTranslator::configure() {
@@ -156,19 +169,22 @@ bool CanopenTranslator::configure_locked() {
 
 bool CanopenTranslator::set_run_stop(bool run) {
     std::lock_guard<std::mutex> lock(sequence_mutex_);
-    if (!configured_ && !configure_locked()) return false;
 
+    // STOP never depends on configure: it must be attempted even if the node
+    // was never configured or configure is failing (e.g. a rejected step).
     if (!run) {
         running_ = false;  // pause SYNC/polling first
-        return run_steps(profile_.stop, "stop");
+        return run_stop_steps("stop");
     }
+
+    if (!configured_ && !configure_locked()) return false;
 
     if (run_steps(profile_.run, "run")) {
         running_ = true;
         return true;
     }
     // Half-applied RUN: bring the device back to a known stopped state.
-    run_steps(profile_.stop, "stop (after failed run)");
+    run_stop_steps("stop (after failed run)");
     running_ = false;
     return false;
 }
@@ -230,6 +246,15 @@ std::optional<TelemetrySample> CanopenTranslator::make_sample(const TelemetryCha
 }
 
 std::optional<TelemetrySample> CanopenTranslator::read_next_telemetry() { return telemetry_.pop(); }
+
+TelemetryWait CanopenTranslator::wait_next_telemetry(std::chrono::milliseconds timeout,
+                                                     TelemetrySample& out) {
+    if (auto s = telemetry_.pop_for(timeout)) {
+        out = *s;
+        return TelemetryWait::Sample;
+    }
+    return telemetry_.is_closed() ? TelemetryWait::Closed : TelemetryWait::Timeout;
+}
 
 void CanopenTranslator::pdo_loop() {
     while (!stop_) {

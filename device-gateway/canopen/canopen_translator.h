@@ -34,6 +34,7 @@ public:
     bool set_run_stop(bool run) override;
     std::optional<bool> read_run_stop_status() override;
     std::optional<TelemetrySample> read_next_telemetry() override;
+    TelemetryWait wait_next_telemetry(std::chrono::milliseconds timeout, TelemetrySample& out) override;
 
     // Reads profile.alive_object. The first successful probe after the node
     // (re)appears also applies profile.configure, so a power-cycled node is
@@ -52,6 +53,7 @@ private:
     void start_threads();
     bool configure_locked();
     bool run_steps(const std::vector<WriteStep>& steps, const char* sequence);
+    bool run_stop_steps(const char* sequence);
     bool write_step(const WriteStep& step);
     std::optional<double> read_object(const std::string& name);
     std::optional<uint32_t> read_object_raw(const ObjectDef& obj);
