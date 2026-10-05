@@ -8,8 +8,6 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_client.cpp" "device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o" "gcc" "device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o.d"
-  "/home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_translator.cpp" "device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o" "gcc" "device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o.d"
   "/home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/main.cpp" "device-gateway/CMakeFiles/device-gateway.dir/main.cpp.o" "gcc" "device-gateway/CMakeFiles/device-gateway.dir/main.cpp.o.d"
   "" "device-gateway/device-gateway" "gcc" "device-gateway/CMakeFiles/device-gateway.dir/link.d"
   )

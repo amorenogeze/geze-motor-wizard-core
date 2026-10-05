@@ -1,5 +1,9 @@
 file(REMOVE_RECURSE
   "CMakeFiles/wizard_tests.dir/link.d"
+  "CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o"
+  "CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o.d"
+  "CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o"
+  "CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o.d"
   "CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o"
   "CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o.d"
   "CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o"

@@ -208,16 +208,16 @@ CMAKE_PROJECT_NAME:STATIC=wizard-core
 CMAKE_PROJECT_SPDX_LICENSE:STATIC=
 
 //Value Computed by CMake
-CMAKE_PROJECT_VERSION:STATIC=1.14.0
+CMAKE_PROJECT_VERSION:STATIC=3.11.3
 
 //Value Computed by CMake
-CMAKE_PROJECT_VERSION_MAJOR:STATIC=1
+CMAKE_PROJECT_VERSION_MAJOR:STATIC=3
 
 //Value Computed by CMake
-CMAKE_PROJECT_VERSION_MINOR:STATIC=14
+CMAKE_PROJECT_VERSION_MINOR:STATIC=11
 
 //Value Computed by CMake
-CMAKE_PROJECT_VERSION_PATCH:STATIC=0
+CMAKE_PROJECT_VERSION_PATCH:STATIC=3
 
 //Value Computed by CMake
 CMAKE_PROJECT_VERSION_TWEAK:STATIC=
@@ -301,11 +301,18 @@ FETCHCONTENT_QUIET:BOOL=ON
 // for googletest
 FETCHCONTENT_SOURCE_DIR_GOOGLETEST:PATH=
 
+//When not empty, overrides where to find pre-populated content
+// for nlohmann_json
+FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON:PATH=
+
 //Enables UPDATE_DISCONNECTED behavior for all content population
 FETCHCONTENT_UPDATES_DISCONNECTED:BOOL=OFF
 
 //Enables UPDATE_DISCONNECTED behavior just for population of googletest
 FETCHCONTENT_UPDATES_DISCONNECTED_GOOGLETEST:BOOL=OFF
+
+//Enables UPDATE_DISCONNECTED behavior just for population of nlohmann_json
+FETCHCONTENT_UPDATES_DISCONNECTED_NLOHMANN_JSON:BOOL=OFF
 
 //Use Abseil and RE2. Requires Abseil and RE2 to be separately
 // added to the build.
@@ -314,6 +321,36 @@ GTEST_HAS_ABSL:BOOL=OFF
 //Enable installation of googletest. (Projects embedding googletest
 // may want to turn this OFF.)
 INSTALL_GTEST:BOOL=ON
+
+//Build the unit tests when BUILD_TESTING is enabled.
+JSON_BuildTests:BOOL=OFF
+
+//Enable CI build targets.
+JSON_CI:BOOL=OFF
+
+//Use extended diagnostic messages.
+JSON_Diagnostics:BOOL=OFF
+
+//Disable default integer enum serialization.
+JSON_DisableEnumSerialization:BOOL=OFF
+
+//Place use-defined string literals in the global namespace.
+JSON_GlobalUDLs:BOOL=ON
+
+//Enable implicit conversions.
+JSON_ImplicitConversions:BOOL=ON
+
+//Install CMake targets during install step.
+JSON_Install:BOOL=OFF
+
+//Enable legacy discarded value comparison.
+JSON_LegacyDiscardedValueComparison:BOOL=OFF
+
+//Use non-amalgamated version of the library.
+JSON_MultipleHeaders:BOOL=ON
+
+//Include as system headers (skip for clang-tidy).
+JSON_SystemInclude:BOOL=OFF
 
 //Arguments to supply to pkg-config
 PKG_CONFIG_ARGN:STRING=
@@ -372,6 +409,18 @@ gtest_force_shared_crt:BOOL=ON
 
 //Build gtest with internal symbols hidden in shared libraries.
 gtest_hide_internal_symbols:BOOL=OFF
+
+//Value Computed by CMake
+nlohmann_json_BINARY_DIR:STATIC=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/_deps/nlohmann_json-build
+
+//The directory containing a CMake configuration file for nlohmann_json.
+nlohmann_json_DIR:PATH=nlohmann_json_DIR-NOTFOUND
+
+//Value Computed by CMake
+nlohmann_json_IS_TOP_LEVEL:STATIC=OFF
+
+//Value Computed by CMake
+nlohmann_json_SOURCE_DIR:STATIC=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/_deps/nlohmann_json-src
 
 //Path to a library.
 pkgcfg_lib_PC_SQLite3_sqlite3:FILEPATH=/usr/lib/x86_64-linux-gnu/libsqlite3.so
@@ -526,7 +575,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=6
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=7
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP
@@ -577,6 +626,7 @@ FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/usr/bin/python3][found component
 FIND_PACKAGE_MESSAGE_DETAILS_SQLite3:INTERNAL=[/usr/lib/x86_64-linux-gnu/libsqlite3.so][/usr/include][v3.46.1()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
+NLOHMANN_JSON_CONFIG_INSTALL_DIR:INTERNAL=share/cmake/nlohmann_json
 PC_SQLite3_CFLAGS:INTERNAL=-I/usr/include
 PC_SQLite3_CFLAGS_I:INTERNAL=
 PC_SQLite3_CFLAGS_OTHER:INTERNAL=

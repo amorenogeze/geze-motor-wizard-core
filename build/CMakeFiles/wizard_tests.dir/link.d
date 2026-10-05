@@ -5,8 +5,12 @@ wizard_tests: \
   CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o \
   CMakeFiles/wizard_tests.dir/tests/test_unix_socket.cpp.o \
   CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o \
+  CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o \
+  CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o \
   libshared.a \
+  device-gateway/libcanopen.a \
   lib/libgtest_main.a \
+  libshared.a \
   /usr/lib/x86_64-linux-gnu/libsqlite3.so \
   lib/libgtest.a \
   /usr/lib/gcc/x86_64-linux-gnu/15/libstdc++.so \
@@ -49,9 +53,17 @@ CMakeFiles/wizard_tests.dir/tests/test_unix_socket.cpp.o:
 
 CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o:
 
+CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o:
+
+CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o:
+
 libshared.a:
 
+device-gateway/libcanopen.a:
+
 lib/libgtest_main.a:
+
+libshared.a:
 
 /usr/lib/x86_64-linux-gnu/libsqlite3.so:
 

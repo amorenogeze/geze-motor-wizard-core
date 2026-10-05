@@ -8,6 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_canopen_translator.cpp" "CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o" "gcc" "CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o.d"
+  "/home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_device_profile.cpp" "CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o" "gcc" "CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o.d"
   "/home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_message.cpp" "CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o" "gcc" "CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o.d"
   "/home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_thread_safe_queue.cpp" "CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o" "gcc" "CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o.d"
   "/home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_unix_socket.cpp" "CMakeFiles/wizard_tests.dir/tests/test_unix_socket.cpp.o" "gcc" "CMakeFiles/wizard_tests.dir/tests/test_unix_socket.cpp.o.d"

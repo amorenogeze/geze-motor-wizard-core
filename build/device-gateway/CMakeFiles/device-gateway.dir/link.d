@@ -3,8 +3,7 @@ device-gateway: \
   /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crti.o \
   /usr/lib/gcc/x86_64-linux-gnu/15/crtbeginS.o \
   CMakeFiles/device-gateway.dir/main.cpp.o \
-  CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o \
-  CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o \
+  libcanopen.a \
   ../libshared.a \
   /usr/lib/x86_64-linux-gnu/libsqlite3.so \
   /usr/lib/gcc/x86_64-linux-gnu/15/libstdc++.so \
@@ -33,7 +32,6 @@ device-gateway: \
   /usr/lib/gcc/x86_64-linux-gnu/15/libgcc.a \
   /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o \
   /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o \
-  /usr/lib/x86_64-linux-gnu/libm.so.6 \
   /lib64/ld-linux-x86-64.so.2
 
 /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/Scrt1.o:
@@ -44,9 +42,7 @@ device-gateway: \
 
 CMakeFiles/device-gateway.dir/main.cpp.o:
 
-CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o:
-
-CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o:
+libcanopen.a:
 
 ../libshared.a:
 
@@ -103,7 +99,5 @@ CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o:
 /usr/lib/gcc/x86_64-linux-gnu/15/crtendS.o:
 
 /usr/lib/gcc/x86_64-linux-gnu/15/../../../x86_64-linux-gnu/crtn.o:
-
-/usr/lib/x86_64-linux-gnu/libm.so.6:
 
 /lib64/ld-linux-x86-64.so.2:

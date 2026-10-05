@@ -114,11 +114,41 @@ CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_thread_safe_queue.cpp -o CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.s
 
+CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o: CMakeFiles/wizard_tests.dir/flags.make
+CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o: /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_device_profile.cpp
+CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o: CMakeFiles/wizard_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o -MF CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o.d -o CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o -c /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_device_profile.cpp
+
+CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_device_profile.cpp > CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.i
+
+CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_device_profile.cpp -o CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.s
+
+CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o: CMakeFiles/wizard_tests.dir/flags.make
+CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o: /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_canopen_translator.cpp
+CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o: CMakeFiles/wizard_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o -MF CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o.d -o CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o -c /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_canopen_translator.cpp
+
+CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_canopen_translator.cpp > CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.i
+
+CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/u7736/workspace/DTW/geze-motor-wizard-core/tests/test_canopen_translator.cpp -o CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.s
+
 # Object files for target wizard_tests
 wizard_tests_OBJECTS = \
 "CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o" \
 "CMakeFiles/wizard_tests.dir/tests/test_unix_socket.cpp.o" \
-"CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o"
+"CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o" \
+"CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o" \
+"CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o"
 
 # External object files for target wizard_tests
 wizard_tests_EXTERNAL_OBJECTS =
@@ -126,14 +156,18 @@ wizard_tests_EXTERNAL_OBJECTS =
 wizard_tests: CMakeFiles/wizard_tests.dir/tests/test_message.cpp.o
 wizard_tests: CMakeFiles/wizard_tests.dir/tests/test_unix_socket.cpp.o
 wizard_tests: CMakeFiles/wizard_tests.dir/tests/test_thread_safe_queue.cpp.o
+wizard_tests: CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o
+wizard_tests: CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o
 wizard_tests: CMakeFiles/wizard_tests.dir/build.make
 wizard_tests: CMakeFiles/wizard_tests.dir/compiler_depend.ts
 wizard_tests: libshared.a
+wizard_tests: device-gateway/libcanopen.a
 wizard_tests: lib/libgtest_main.a
+wizard_tests: libshared.a
 wizard_tests: /usr/lib/x86_64-linux-gnu/libsqlite3.so
 wizard_tests: lib/libgtest.a
 wizard_tests: CMakeFiles/wizard_tests.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable wizard_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX executable wizard_tests"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/wizard_tests.dir/link.txt --verbose=$(VERBOSE)
 	/usr/bin/cmake -D TEST_TARGET=wizard_tests -D TEST_EXECUTABLE=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/wizard_tests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/home/u7736/workspace/DTW/geze-motor-wizard-core/build -D TEST_EXTRA_ARGS= -D TEST_PROPERTIES= -D TEST_PREFIX= -D TEST_SUFFIX= -D TEST_FILTER= -D NO_PRETTY_TYPES=FALSE -D NO_PRETTY_VALUES=FALSE -D TEST_LIST=wizard_tests_TESTS -D CTEST_FILE=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/wizard_tests[1]_tests.cmake -D TEST_DISCOVERY_TIMEOUT=5 -D TEST_DISCOVERY_EXTRA_ARGS= -D TEST_XML_OUTPUT_DIR= -P /usr/share/cmake-4.2/Modules/GoogleTestAddTests.cmake
 

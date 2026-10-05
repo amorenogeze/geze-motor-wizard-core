@@ -44,6 +44,11 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("/home/u7736/workspace/DTW/geze-motor-wizard-core/build/_deps/nlohmann_json-build/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("/home/u7736/workspace/DTW/geze-motor-wizard-core/build/wizard-engine/cmake_install.cmake")
 endif()
 

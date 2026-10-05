@@ -86,53 +86,23 @@ device-gateway/CMakeFiles/device-gateway.dir/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/device-gateway.dir/main.cpp.s"
 	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/main.cpp -o CMakeFiles/device-gateway.dir/main.cpp.s
 
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o: device-gateway/CMakeFiles/device-gateway.dir/flags.make
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o: /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_client.cpp
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o: device-gateway/CMakeFiles/device-gateway.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o"
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o -MF CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o.d -o CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o -c /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_client.cpp
-
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.i"
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_client.cpp > CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.i
-
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.s"
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_client.cpp -o CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.s
-
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o: device-gateway/CMakeFiles/device-gateway.dir/flags.make
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o: /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_translator.cpp
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o: device-gateway/CMakeFiles/device-gateway.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o"
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o -MF CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o.d -o CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o -c /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_translator.cpp
-
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.i"
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_translator.cpp > CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.i
-
-device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.s"
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/canopen_translator.cpp -o CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.s
-
 # Object files for target device-gateway
 device__gateway_OBJECTS = \
-"CMakeFiles/device-gateway.dir/main.cpp.o" \
-"CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o" \
-"CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o"
+"CMakeFiles/device-gateway.dir/main.cpp.o"
 
 # External object files for target device-gateway
 device__gateway_EXTERNAL_OBJECTS =
 
 device-gateway/device-gateway: device-gateway/CMakeFiles/device-gateway.dir/main.cpp.o
-device-gateway/device-gateway: device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o
-device-gateway/device-gateway: device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o
 device-gateway/device-gateway: device-gateway/CMakeFiles/device-gateway.dir/build.make
 device-gateway/device-gateway: device-gateway/CMakeFiles/device-gateway.dir/compiler_depend.ts
+device-gateway/device-gateway: device-gateway/libcanopen.a
 device-gateway/device-gateway: libshared.a
 device-gateway/device-gateway: /usr/lib/x86_64-linux-gnu/libsqlite3.so
 device-gateway/device-gateway: device-gateway/CMakeFiles/device-gateway.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX executable device-gateway"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/u7736/workspace/DTW/geze-motor-wizard-core/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable device-gateway"
 	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/device-gateway.dir/link.txt --verbose=$(VERBOSE)
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway && /usr/bin/cmake -E copy_directory /home/u7736/workspace/DTW/geze-motor-wizard-core/device-gateway/canopen/devices /home/u7736/workspace/DTW/geze-motor-wizard-core/build/device-gateway/devices
 
 # Rule to build all files generated by this target.
 device-gateway/CMakeFiles/device-gateway.dir/build: device-gateway/device-gateway

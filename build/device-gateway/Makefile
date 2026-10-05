@@ -172,6 +172,20 @@ depend:
 .PHONY : depend
 
 # Convenience name for target.
+device-gateway/CMakeFiles/canopen.dir/rule:
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 device-gateway/CMakeFiles/canopen.dir/rule
+.PHONY : device-gateway/CMakeFiles/canopen.dir/rule
+
+# Convenience name for target.
+canopen: device-gateway/CMakeFiles/canopen.dir/rule
+.PHONY : canopen
+
+# fast build rule for target.
+canopen/fast:
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/build
+.PHONY : canopen/fast
+
+# Convenience name for target.
 device-gateway/CMakeFiles/device-gateway.dir/rule:
 	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 device-gateway/CMakeFiles/device-gateway.dir/rule
 .PHONY : device-gateway/CMakeFiles/device-gateway.dir/rule
@@ -190,7 +204,7 @@ canopen/canopen_client.o: canopen/canopen_client.cpp.o
 
 # target to build an object file
 canopen/canopen_client.cpp.o:
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/device-gateway.dir/build.make device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.o
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/canopen_client.cpp.o
 .PHONY : canopen/canopen_client.cpp.o
 
 canopen/canopen_client.i: canopen/canopen_client.cpp.i
@@ -198,7 +212,7 @@ canopen/canopen_client.i: canopen/canopen_client.cpp.i
 
 # target to preprocess a source file
 canopen/canopen_client.cpp.i:
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/device-gateway.dir/build.make device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.i
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/canopen_client.cpp.i
 .PHONY : canopen/canopen_client.cpp.i
 
 canopen/canopen_client.s: canopen/canopen_client.cpp.s
@@ -206,7 +220,7 @@ canopen/canopen_client.s: canopen/canopen_client.cpp.s
 
 # target to generate assembly for a file
 canopen/canopen_client.cpp.s:
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/device-gateway.dir/build.make device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_client.cpp.s
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/canopen_client.cpp.s
 .PHONY : canopen/canopen_client.cpp.s
 
 canopen/canopen_translator.o: canopen/canopen_translator.cpp.o
@@ -214,7 +228,7 @@ canopen/canopen_translator.o: canopen/canopen_translator.cpp.o
 
 # target to build an object file
 canopen/canopen_translator.cpp.o:
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/device-gateway.dir/build.make device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.o
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/canopen_translator.cpp.o
 .PHONY : canopen/canopen_translator.cpp.o
 
 canopen/canopen_translator.i: canopen/canopen_translator.cpp.i
@@ -222,7 +236,7 @@ canopen/canopen_translator.i: canopen/canopen_translator.cpp.i
 
 # target to preprocess a source file
 canopen/canopen_translator.cpp.i:
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/device-gateway.dir/build.make device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.i
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/canopen_translator.cpp.i
 .PHONY : canopen/canopen_translator.cpp.i
 
 canopen/canopen_translator.s: canopen/canopen_translator.cpp.s
@@ -230,8 +244,32 @@ canopen/canopen_translator.s: canopen/canopen_translator.cpp.s
 
 # target to generate assembly for a file
 canopen/canopen_translator.cpp.s:
-	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/device-gateway.dir/build.make device-gateway/CMakeFiles/device-gateway.dir/canopen/canopen_translator.cpp.s
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/canopen_translator.cpp.s
 .PHONY : canopen/canopen_translator.cpp.s
+
+canopen/device_profile.o: canopen/device_profile.cpp.o
+.PHONY : canopen/device_profile.o
+
+# target to build an object file
+canopen/device_profile.cpp.o:
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/device_profile.cpp.o
+.PHONY : canopen/device_profile.cpp.o
+
+canopen/device_profile.i: canopen/device_profile.cpp.i
+.PHONY : canopen/device_profile.i
+
+# target to preprocess a source file
+canopen/device_profile.cpp.i:
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/device_profile.cpp.i
+.PHONY : canopen/device_profile.cpp.i
+
+canopen/device_profile.s: canopen/device_profile.cpp.s
+.PHONY : canopen/device_profile.s
+
+# target to generate assembly for a file
+canopen/device_profile.cpp.s:
+	cd /home/u7736/workspace/DTW/geze-motor-wizard-core/build && $(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/canopen/device_profile.cpp.s
+.PHONY : canopen/device_profile.cpp.s
 
 main.o: main.cpp.o
 .PHONY : main.o
@@ -270,6 +308,7 @@ help:
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... canopen"
 	@echo "... device-gateway"
 	@echo "... canopen/canopen_client.o"
 	@echo "... canopen/canopen_client.i"
@@ -277,6 +316,9 @@ help:
 	@echo "... canopen/canopen_translator.o"
 	@echo "... canopen/canopen_translator.i"
 	@echo "... canopen/canopen_translator.s"
+	@echo "... canopen/device_profile.o"
+	@echo "... canopen/device_profile.i"
+	@echo "... canopen/device_profile.s"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"

@@ -211,6 +211,19 @@ wizard-engine/fast:
 .PHONY : wizard-engine/fast
 
 #=============================================================================
+# Target rules for targets named canopen
+
+# Build rule for target.
+canopen: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 canopen
+.PHONY : canopen
+
+# fast build rule for target.
+canopen/fast:
+	$(MAKE) $(MAKESILENT) -f device-gateway/CMakeFiles/canopen.dir/build.make device-gateway/CMakeFiles/canopen.dir/build
+.PHONY : canopen/fast
+
+#=============================================================================
 # Target rules for targets named device-gateway
 
 # Build rule for target.
@@ -347,6 +360,54 @@ shared/unix_socket.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/shared.dir/build.make CMakeFiles/shared.dir/shared/unix_socket.cpp.s
 .PHONY : shared/unix_socket.cpp.s
 
+tests/test_canopen_translator.o: tests/test_canopen_translator.cpp.o
+.PHONY : tests/test_canopen_translator.o
+
+# target to build an object file
+tests/test_canopen_translator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/wizard_tests.dir/build.make CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.o
+.PHONY : tests/test_canopen_translator.cpp.o
+
+tests/test_canopen_translator.i: tests/test_canopen_translator.cpp.i
+.PHONY : tests/test_canopen_translator.i
+
+# target to preprocess a source file
+tests/test_canopen_translator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/wizard_tests.dir/build.make CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.i
+.PHONY : tests/test_canopen_translator.cpp.i
+
+tests/test_canopen_translator.s: tests/test_canopen_translator.cpp.s
+.PHONY : tests/test_canopen_translator.s
+
+# target to generate assembly for a file
+tests/test_canopen_translator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/wizard_tests.dir/build.make CMakeFiles/wizard_tests.dir/tests/test_canopen_translator.cpp.s
+.PHONY : tests/test_canopen_translator.cpp.s
+
+tests/test_device_profile.o: tests/test_device_profile.cpp.o
+.PHONY : tests/test_device_profile.o
+
+# target to build an object file
+tests/test_device_profile.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/wizard_tests.dir/build.make CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.o
+.PHONY : tests/test_device_profile.cpp.o
+
+tests/test_device_profile.i: tests/test_device_profile.cpp.i
+.PHONY : tests/test_device_profile.i
+
+# target to preprocess a source file
+tests/test_device_profile.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/wizard_tests.dir/build.make CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.i
+.PHONY : tests/test_device_profile.cpp.i
+
+tests/test_device_profile.s: tests/test_device_profile.cpp.s
+.PHONY : tests/test_device_profile.s
+
+# target to generate assembly for a file
+tests/test_device_profile.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/wizard_tests.dir/build.make CMakeFiles/wizard_tests.dir/tests/test_device_profile.cpp.s
+.PHONY : tests/test_device_profile.cpp.s
+
 tests/test_message.o: tests/test_message.cpp.o
 .PHONY : tests/test_message.o
 
@@ -432,6 +493,7 @@ help:
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... canopen"
 	@echo "... device-gateway"
 	@echo "... gmock"
 	@echo "... gmock_main"
@@ -449,6 +511,12 @@ help:
 	@echo "... shared/unix_socket.o"
 	@echo "... shared/unix_socket.i"
 	@echo "... shared/unix_socket.s"
+	@echo "... tests/test_canopen_translator.o"
+	@echo "... tests/test_canopen_translator.i"
+	@echo "... tests/test_canopen_translator.s"
+	@echo "... tests/test_device_profile.o"
+	@echo "... tests/test_device_profile.i"
+	@echo "... tests/test_device_profile.s"
 	@echo "... tests/test_message.o"
 	@echo "... tests/test_message.i"
 	@echo "... tests/test_message.s"
