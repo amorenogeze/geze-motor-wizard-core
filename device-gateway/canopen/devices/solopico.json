@@ -76,8 +76,8 @@
   "run": [
     { "object": "drive_enable",     "value": 1 },
     { "object": "motor_direction",  "value": 1 },
-    { "object": "torque_reference", "value": 2.0, "ramp_rate": 0.5,
-      "_comment": "A. RUN ramps the torque current up at ramp_rate A/s (0 -> 2.0 A in 4 s, steps every 20 ms). Keep value <= current_limit." }
+    { "object": "torque_reference", "value": 4.0, "ramp_rate": 0.5,
+      "_comment": "A. RUN ramps the torque current up at ramp_rate A/s (0 -> 4.0 A in 4 s, steps every 20 ms). Keep value <= current_limit." }
   ],
 
   "stop": [
