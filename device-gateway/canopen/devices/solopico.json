@@ -56,7 +56,7 @@
     { "object": "speed_reference",   "value": 0 },
     { "object": "motor_type",        "value": 0,   "verify": true, "_comment": "DC brushed. The PICO ships as BLDC/PMSM." },
     { "object": "pwm_frequency_khz", "value": 20 },
-    { "object": "current_limit",     "value": 2.0, "verify": true },
+    { "object": "current_limit",     "value": 10, "verify": true },
     { "object": "encoder_lines",     "value": 500, "verify": true,
       "_comment": "PLACEHOLDER: set to your encoder's lines/PPR from its datasheet. Wrong value = wrong rpm scale; position counts are raw and unaffected. Written before feedback_mode." },
     { "object": "feedback_mode",     "value": 1,   "verify": true,
@@ -76,7 +76,7 @@
   "run": [
     { "object": "drive_enable",     "value": 1 },
     { "object": "motor_direction",  "value": 1 },
-    { "object": "torque_reference", "value": 4.0, "ramp_rate": 0.5,
+    { "object": "torque_reference", "value": 5.75, "ramp_rate": 0.5,
       "_comment": "A. RUN ramps the torque current up at ramp_rate A/s (0 -> 4.0 A in 4 s, steps every 20 ms). Keep value <= current_limit." }
   ],
 
