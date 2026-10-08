@@ -15,6 +15,8 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -160,11 +162,28 @@ private:
     std::vector<SdoWrite> writes_;
 };
 
+// The step that writes 'object' in a sequence. Tests take expected values from
+// here instead of hard-coding them, so tuning solopico.json doesn't break them.
+WriteStep& find_step(std::vector<WriteStep>& seq, const std::string& object) {
+    for (auto& s : seq)
+        if (s.object == object) return s;
+    throw std::runtime_error("profile sequence has no step '" + object + "'");
+}
+
 // The shipped profile, exactly as installed (ramps included).
 DeviceProfile shipped_profile() {
     DeviceProfile p = load_device_profile(std::string(WIZARD_SOURCE_DIR) +
                                           "/device-gateway/canopen/devices/solopico.json");
     p.sdo_timeout_ms = 100;  // keep "node silent" tests fast
+    return p;
+}
+
+// Ramp tests use a fixed RUN torque target: they test the ramp mechanism, not
+// the shipped torque, and the shipped 5.75 A would make each ramp take 11.5 s.
+constexpr double kTestTorque = 2.0;  // A
+DeviceProfile ramp_profile() {
+    DeviceProfile p = shipped_profile();
+    find_step(p.run, "torque_reference").value = kTestTorque;
     return p;
 }
 
@@ -221,7 +240,8 @@ TEST(CanopenClient, WriteCommandSpecifiers) {
 
 TEST(CanopenTranslator, ConfigureAppliesProfileInOrder) {
     FakePico pico;
-    auto t = make_translator(pico);
+    DeviceProfile p = pico_profile();
+    auto t = make_translator(pico, p);
     ASSERT_TRUE(t->configure());
 
     auto w = pico.writes();
@@ -229,7 +249,8 @@ TEST(CanopenTranslator, ConfigureAppliesProfileInOrder) {
     EXPECT_EQ(w.front().index, 0x3002);  // command_mode first
     for (const auto& x : w) EXPECT_EQ(x.cs, 0x22);
     EXPECT_EQ(pico.get(0x3015), 0u);                                        // motor type DC
-    EXPECT_EQ(pico.get(0x3003), encode_value(ValueType::Q17, 2.0));         // current limit 2 A
+    EXPECT_EQ(pico.get(0x3003),                                             // current limit from profile
+              encode_value(ValueType::Q17, find_step(p.configure, "current_limit").value));
     EXPECT_EQ(pico.get(0x3016), 1u);                                        // torque mode
     EXPECT_EQ(pico.get(0x1814, 1), 0x80000281u);                            // position TPDO
     EXPECT_EQ(pico.get(0x1815, 2), 1u);                                     // speed TPDO every SYNC
@@ -249,10 +270,11 @@ TEST(CanopenTranslator, VerifyMismatchStopsConfigure) {
 
 TEST(CanopenTranslator, RunStopAndStatus) {
     FakePico pico;
-    auto t = make_translator(pico);
+    DeviceProfile p = pico_profile();
+    auto t = make_translator(pico, p);
     ASSERT_TRUE(t->set_run_stop(true));  // configures on first use
     EXPECT_EQ(pico.get(0x3008), 1u);
-    EXPECT_EQ(pico.get(0x3004), encode_value(ValueType::Q17, 2.0));
+    EXPECT_EQ(pico.get(0x3004), encode_value(ValueType::Q17, find_step(p.run, "torque_reference").value));
     EXPECT_EQ(t->read_run_stop_status().value_or(false), true);
 
     ASSERT_TRUE(t->set_run_stop(false));
@@ -281,20 +303,24 @@ std::vector<double> q17_writes(FakePico& pico, uint16_t index) {
 
 TEST(CanopenTranslator, TorqueRampsUpAtRateOnRun) {
     FakePico pico;
-    auto t = make_translator(pico, shipped_profile());  // 0 -> 2.0 A at 0.5 A/s
+    DeviceProfile p = ramp_profile();                          // 0 -> 2.0 A at the profile's ramp_rate
+    const double rate = find_step(p.run, "torque_reference").ramp_rate;
+    ASSERT_GT(rate, 0.0);
+    auto t = make_translator(pico, p);
     ASSERT_TRUE(t->configure());
 
     pico.clear_writes();
     const auto t0 = std::chrono::steady_clock::now();
     ASSERT_TRUE(t->set_run_stop(true));
-    const auto took = std::chrono::steady_clock::now() - t0;
-    EXPECT_GE(took, 3500ms);                                   // 2.0 A / 0.5 A/s = 4 s
-    EXPECT_LT(took, 6s);
+    const auto took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const double expected = kTestTorque / rate;                // 2.0 A / 0.5 A/s = 4 s
+    EXPECT_GE(took, expected * 0.85);
+    EXPECT_LT(took, expected * 1.5);
     auto up = q17_writes(pico, 0x3004);
-    ASSERT_GT(up.size(), 100u);                                // ~200 steps of 20 ms
+    ASSERT_GT(up.size(), static_cast<size_t>(expected / 0.02 / 2));  // at least half of the 20 ms steps
     for (size_t i = 1; i < up.size(); ++i) EXPECT_GE(up[i], up[i - 1]);
-    for (size_t i = 1; i < up.size(); ++i) EXPECT_LE(up[i] - up[i - 1], 0.02);  // no jumps
-    EXPECT_DOUBLE_EQ(up.back(), 2.0);
+    for (size_t i = 1; i < up.size(); ++i) EXPECT_LE(up[i] - up[i - 1], rate * 0.04 + 1e-6);  // <= 2 steps, no jumps
+    EXPECT_DOUBLE_EQ(up.back(), kTestTorque);
     t->set_run_stop(false);
 }
 
@@ -323,7 +349,8 @@ TEST(CanopenTranslator, RampDownStartsFromMeasuredCurrent) {
 TEST(CanopenTranslator, RampKeepsItsDurationWithASlowNode) {
     FakePico pico;
     DeviceProfile p = pico_profile();
-    p.run.back().ramp_ms = 1000;                               // torque_reference step
+    find_step(p.run, "torque_reference").ramp_ms = 1000;
+    find_step(p.run, "torque_reference").value = kTestTorque;
     auto t = make_translator(pico, p);
     ASSERT_TRUE(t->configure());
     pico.reply_delay_ms = 60;                                  // every SDO answer takes 60 ms
@@ -337,7 +364,7 @@ TEST(CanopenTranslator, RampKeepsItsDurationWithASlowNode) {
     EXPECT_GE(took, 1000ms);
     auto up = q17_writes(pico, 0x3004);
     EXPECT_GT(up.size(), 5u);                                  // still a ramp, just coarser
-    EXPECT_DOUBLE_EQ(up.back(), 2.0);
+    EXPECT_DOUBLE_EQ(up.back(), kTestTorque);
     pico.reply_delay_ms = 0;
     t->set_run_stop(false);
 }
@@ -345,7 +372,8 @@ TEST(CanopenTranslator, RampKeepsItsDurationWithASlowNode) {
 TEST(CanopenTranslator, FixedTimeRampStillSupported) {
     FakePico pico;
     DeviceProfile p = pico_profile();
-    p.run.back().ramp_ms = 400;                                // torque_reference step
+    find_step(p.run, "torque_reference").ramp_ms = 400;
+    find_step(p.run, "torque_reference").value = kTestTorque;
     auto t = make_translator(pico, p);
     ASSERT_TRUE(t->configure());
     pico.clear_writes();
@@ -353,13 +381,13 @@ TEST(CanopenTranslator, FixedTimeRampStillSupported) {
     ASSERT_TRUE(t->set_run_stop(true));
     EXPECT_GE(std::chrono::steady_clock::now() - t0, 300ms);
     EXPECT_GT(q17_writes(pico, 0x3004).size(), 10u);
-    EXPECT_DOUBLE_EQ(q17_writes(pico, 0x3004).back(), 2.0);
+    EXPECT_DOUBLE_EQ(q17_writes(pico, 0x3004).back(), kTestTorque);
     t->set_run_stop(false);
 }
 
 TEST(CanopenTranslator, StopInterruptsRampUp) {
     FakePico pico;
-    auto t = make_translator(pico, shipped_profile());
+    auto t = make_translator(pico, ramp_profile());
     ASSERT_TRUE(t->configure());
 
     std::atomic<bool> run_result{true};
@@ -382,7 +410,7 @@ TEST(CanopenTranslator, StopInterruptsRampUp) {
 
 TEST(CanopenTranslator, RampDownFailureStillDisablesDrive) {
     FakePico pico;
-    auto t = make_translator(pico, shipped_profile());
+    auto t = make_translator(pico, ramp_profile());
     ASSERT_TRUE(t->set_run_stop(true));
     pico.reject_writes.insert(0x3004);                         // every torque write fails
     EXPECT_FALSE(t->set_run_stop(false));
