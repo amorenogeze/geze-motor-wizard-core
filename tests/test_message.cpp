@@ -171,3 +171,32 @@ TEST(PayloadCodec, McuStatusEventRoundTrip) {
     ASSERT_TRUE(parsed2.has_value());
     EXPECT_FALSE(*parsed2);
 }
+
+TEST(Message, SetMotionCommandEncodesLikeThePythonUi) {
+    // TORQUE 5750 mA CW -> struct.pack('<BiB', 1, 5750, 0) = 01 76 16 00 00 00
+    Message m = make_set_motion_command({MotionMode::Torque, 5750, MotionDirection::Cw});
+    EXPECT_EQ(m.type, MessageType::SetMotionCommand);
+    EXPECT_EQ(m.payload, (std::vector<uint8_t>{0x01, 0x76, 0x16, 0x00, 0x00, 0x00}));
+}
+
+TEST(Message, SetMotionCommandRoundTrip) {
+    auto p = parse_set_motion_command(make_set_motion_command({MotionMode::Position, -4000, MotionDirection::Cw}));
+    ASSERT_TRUE(p);
+    EXPECT_EQ(p->mode, MotionMode::Position);
+    EXPECT_EQ(p->setpoint, -4000);
+    EXPECT_EQ(p->direction, MotionDirection::Cw);
+
+    // SPEED 1500 rpm CCW, bytes as sent by ui.py
+    p = parse_set_motion_command(Message{MessageType::SetMotionCommand, {0x02, 0xDC, 0x05, 0x00, 0x00, 0x01}});
+    ASSERT_TRUE(p);
+    EXPECT_EQ(p->mode, MotionMode::Speed);
+    EXPECT_EQ(p->setpoint, 1500);
+    EXPECT_EQ(p->direction, MotionDirection::Ccw);
+}
+
+TEST(Message, SetMotionCommandRejectsBadPayloads) {
+    EXPECT_FALSE(parse_set_motion_command(Message{MessageType::SetMotionCommand, {0x01, 0, 0, 0, 0}}));     // 5 bytes
+    EXPECT_FALSE(parse_set_motion_command(Message{MessageType::SetMotionCommand, {0x05, 0, 0, 0, 0, 0}}));  // mode 5
+    EXPECT_FALSE(parse_set_motion_command(Message{MessageType::SetMotionCommand, {0x01, 0, 0, 0, 0, 2}}));  // direction 2
+    EXPECT_FALSE(parse_set_motion_command(Message{MessageType::SetRunStopCommand, {0x01, 0, 0, 0, 0, 0}})); // wrong type
+}

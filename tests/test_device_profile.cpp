@@ -8,14 +8,14 @@ using namespace wizard;
 
 namespace {
 
-// Smallest valid profile; tests patch pieces of it.
-std::string minimal_profile(const std::string& extra_objects = "", const std::string& run = "[]",
+// Smallest valid profile; tests patch pieces of it. 'steps' is the configure sequence.
+std::string minimal_profile(const std::string& extra_objects = "", const std::string& steps = "[]",
                             const std::string& telemetry = "[]") {
     return R"({
       "name": "test", "node_id": 5,
       "objects": { "enable": {"index": "0x3008", "type": "u32"},
                    "fw": {"index": 12346, "type": "u32"} )" + extra_objects + R"( },
-      "configure": [], "run": )" + run + R"(, "stop": [],
+      "configure": )" + steps + R"(,
       "status": {"object": "enable", "running_value": 1},
       "alive_object": "fw",
       "device_info": {"vendor_id": {"value": "0x1234"}, "product_code": {"object": "fw"},
@@ -53,15 +53,15 @@ TEST(DeviceProfile, ShippedSoloPicoProfileLoads) {
     EXPECT_EQ(p.telemetry[1].kind, TelemetryKind::Velocity);
     EXPECT_DOUBLE_EQ(p.telemetry[2].scale, 1000.0);
 
-    // RUN ramps the torque up, STOP ramps it down before disabling the drive.
-    ASSERT_FALSE(p.run.empty());
-    EXPECT_EQ(p.run.back().object, "torque_reference");
-    EXPECT_DOUBLE_EQ(p.run.back().ramp_rate, 0.5);
-    ASSERT_GE(p.stop.size(), 2u);
-    EXPECT_EQ(p.stop.front().object, "torque_reference");
-    EXPECT_DOUBLE_EQ(p.stop.front().ramp_rate, 0.5);
-    EXPECT_EQ(p.stop.front().ramp_start_object, "dc_motor_current");
-    EXPECT_EQ(p.stop.back().object, "drive_enable");
+    // Run / stop are in the command set now (see test_command_set.cpp).
+}
+
+TEST(DeviceProfile, RunAndStopMovedToCommandSet) {
+    std::string json = minimal_profile();
+    json.replace(json.find("\"configure\""), 11, "\"run\": [], \"stop\": [], \"configure\"");
+    const std::string err = error_of(json);
+    EXPECT_NE(err.find("'run' moved to the command set"), std::string::npos) << err;
+    EXPECT_NE(err.find("'stop' moved to the command set"), std::string::npos) << err;
 }
 
 TEST(DeviceProfile, MinimalProfileParses) {
@@ -76,15 +76,15 @@ TEST(DeviceProfile, MinimalProfileParses) {
 TEST(DeviceProfile, HexStringStepValue) {
     DeviceProfile p = parse_device_profile(
         minimal_profile("", R"([{"object": "enable", "value": "0x80000281"}])"));
-    ASSERT_EQ(p.run.size(), 1u);
-    EXPECT_EQ(encode_value(ValueType::U32, p.run[0].value), 0x80000281u);
+    ASSERT_EQ(p.configure.size(), 1u);
+    EXPECT_EQ(encode_value(ValueType::U32, p.configure[0].value), 0x80000281u);
 }
 
 TEST(DeviceProfile, RampMsParsed) {
     DeviceProfile p = parse_device_profile(
         minimal_profile("", R"([{"object": "enable", "value": 1, "ramp_ms": 500}])"));
-    ASSERT_EQ(p.run.size(), 1u);
-    EXPECT_EQ(p.run[0].ramp_ms, 500u);
+    ASSERT_EQ(p.configure.size(), 1u);
+    EXPECT_EQ(p.configure[0].ramp_ms, 500u);
     EXPECT_THROW(parse_device_profile(
                      minimal_profile("", R"([{"object": "enable", "value": 1, "ramp_ms": 70000}])")),
                  ProfileError);
@@ -93,8 +93,8 @@ TEST(DeviceProfile, RampMsParsed) {
 TEST(DeviceProfile, RampRateAndStartObject) {
     DeviceProfile p = parse_device_profile(minimal_profile(
         "", R"([{"object": "enable", "value": 1, "ramp_rate": 0.5, "ramp_start_object": "fw"}])"));
-    EXPECT_DOUBLE_EQ(p.run[0].ramp_rate, 0.5);
-    EXPECT_EQ(p.run[0].ramp_start_object, "fw");
+    EXPECT_DOUBLE_EQ(p.configure[0].ramp_rate, 0.5);
+    EXPECT_EQ(p.configure[0].ramp_start_object, "fw");
     // both ramp kinds at once, a negative rate, or a start object without a ramp: errors
     EXPECT_THROW(parse_device_profile(minimal_profile(
                      "", R"([{"object": "enable", "value": 1, "ramp_ms": 10, "ramp_rate": 1}])")),
@@ -119,7 +119,7 @@ TEST(DeviceProfile, TypoInKeyIsAnError) {
 
 TEST(DeviceProfile, UnknownObjectInStep) {
     const std::string err = error_of(minimal_profile("", R"([{"object": "nope", "value": 1}])"));
-    EXPECT_NE(err.find("run[0]: unknown object 'nope'"), std::string::npos) << err;
+    EXPECT_NE(err.find("configure[0]: unknown object 'nope'"), std::string::npos) << err;
 }
 
 TEST(DeviceProfile, ValueMustFitObjectType) {

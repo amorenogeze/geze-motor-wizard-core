@@ -14,8 +14,10 @@ namespace wizard {
 
 // CANopen implementation of DeviceTranslator. Protocol mechanics live in
 // CanopenClient; everything device-specific (objects, startup configuration,
-// run/stop sequences, telemetry mapping and scaling) comes from a
-// DeviceProfile loaded from JSON (canopen/devices/<device>.json).
+// telemetry mapping and scaling) comes from a DeviceProfile loaded from JSON
+// (canopen/devices/<device>.json). It executes the steps it is given (by the
+// CommandManager) and knows one sequence of its own: 'stop_steps', run by
+// stop() and after a failed start, so the drive is never left half-started.
 //
 // Threads owned here:
 //   pdo_thread_  : decodes TPDOs into TelemetrySamples (always running)
@@ -25,15 +27,19 @@ namespace wizard {
 // so no telemetry flows until RUN (same behaviour as the V1 simulator).
 class CanopenTranslator : public DeviceTranslator {
 public:
-    CanopenTranslator(const std::string& iface, DeviceProfile profile);
+    CanopenTranslator(const std::string& iface, DeviceProfile profile, std::vector<WriteStep> stop_steps);
     // For tests: use an already-constructed client.
-    CanopenTranslator(std::unique_ptr<CanopenClient> client, DeviceProfile profile);
+    CanopenTranslator(std::unique_ptr<CanopenClient> client, DeviceProfile profile,
+                      std::vector<WriteStep> stop_steps);
     ~CanopenTranslator() override;
 
     std::optional<DeviceInfo> read_device_info() override;
-    bool set_run_stop(bool run) override;
+    bool start(const std::vector<WriteStep>& steps) override;
+    bool execute(const std::vector<WriteStep>& steps) override;
+    bool stop() override;
+    void request_stop() override { stop_requested_ = true; }
+    bool is_running() const override { return running_; }
     std::optional<bool> read_run_stop_status() override;
-    std::optional<TelemetrySample> read_next_telemetry() override;
     TelemetryWait wait_next_telemetry(std::chrono::milliseconds timeout, TelemetrySample& out) override;
 
     // Reads profile.alive_object. The first successful probe after the node
@@ -46,7 +52,6 @@ public:
     bool configure();
 
     bool is_configured() const { return configured_; }
-    bool is_running() const { return running_; }
     const DeviceProfile& profile() const { return profile_; }
 
 private:
@@ -67,6 +72,7 @@ private:
     void poll_loop();
 
     DeviceProfile profile_;
+    std::vector<WriteStep> stop_steps_;
     std::unique_ptr<CanopenClient> client_;
     std::map<uint32_t, TelemetryChannel> tpdo_channels_;
     std::vector<TelemetryChannel> poll_channels_;

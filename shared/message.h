@@ -26,6 +26,10 @@ enum class MessageType : uint8_t {
     SetRunStopCommand = 0x40,
     RunStopStatusEvent = 0x41,
 
+    // Motion: UI -> engine -> gateway. Torque / speed / position / stop / home
+    // with a setpoint. Answered with RunStopStatusEvent (0x41), like 0x40.
+    SetMotionCommand = 0x43,
+
     // MCU status, only engine -> UI (device-gateway decides it and
     // sends it; engine just relays).
     McuStatusEvent = 0x51,
@@ -88,6 +92,28 @@ struct RunStopStatusPayload {
     bool running;
 };
 
+// SetMotionCommand (0x43), 6-byte payload: [mode u8][setpoint i32 LE][direction u8].
+enum class MotionMode : uint8_t {
+    Stop = 0,
+    Torque = 1,    // setpoint in mA
+    Speed = 2,     // setpoint in rpm (magnitude, direction picks the sign)
+    Position = 3,  // setpoint in encoder counts, absolute, 0 = home; direction ignored
+    Home = 4,      // current position becomes 0; refused while running
+};
+
+enum class MotionDirection : uint8_t {
+    Cw = 0,
+    Ccw = 1,
+};
+
+struct SetMotionPayload {
+    MotionMode mode;
+    int32_t setpoint;  // 0 for Stop / Home
+    MotionDirection direction;
+};
+
+constexpr size_t kSetMotionPayloadSize = 6;
+
 Message make_position_event(const PositionEventPayload& p);
 Message make_speed_event(const SpeedEventPayload& p);
 Message make_current_event(const CurrentEventPayload& p);
@@ -96,6 +122,7 @@ Message make_device_info_response(const DeviceInfoResponsePayload& p);
 Message make_set_run_stop_command(bool run);
 Message make_run_stop_status_event(const RunStopStatusPayload& p);
 Message make_mcu_status_event(bool responding);
+Message make_set_motion_command(const SetMotionPayload& p);
 
 // Return nullopt if the Message payload doesn't have the expected size
 // for that type (corrupted frame or unexpected type).
@@ -106,5 +133,7 @@ std::optional<DeviceInfoResponsePayload> parse_device_info_response(const Messag
 std::optional<bool> parse_set_run_stop_command(const Message& m);
 std::optional<RunStopStatusPayload> parse_run_stop_status_event(const Message& m);
 std::optional<bool> parse_mcu_status_event(const Message& m);
+// Also nullopt for an unknown mode (> 4) or direction (> 1).
+std::optional<SetMotionPayload> parse_set_motion_command(const Message& m);
 
 }  // namespace wizard

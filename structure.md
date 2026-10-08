@@ -46,19 +46,27 @@ connection events/errors; per-telemetry logs only with `WIZARD_VERBOSE=1`.
 │   ├── CMakeLists.txt
 │   └── main.cpp              # relay + DB writer
 ├── device-gateway/
-│   ├── CMakeLists.txt        # static lib `canopen` (client, translator, profile) + exe; copies devices/ next to exe; installs to /etc/wizard/devices
-│   ├── main.cpp              # profile lookup + session loop, 3 threads (telemetry/command/heartbeat)
-│   ├── device_translator.h   # abstract DeviceTranslator + TelemetrySample, DeviceInfo (unchanged)
+│   ├── CMakeLists.txt        # libs `canopen` (addresses) and `gateway` (commands + session, links canopen) + exe;
+│   │                         # copies devices/ and the commands JSON next to the exe; installs to /etc/wizard/{devices,commands}
+│   ├── main.cpp              # file lookup (argv -> env -> /etc/wizard -> exe dir), load, open CAN, signals, reconnect loop
+│   ├── engine_session.h/.cpp # EngineSession: one wizard-engine connection, 4 threads (telemetry / reader / worker / heartbeat)
+│   ├── device_translator.h   # abstract DeviceTranslator (start/execute/stop/request_stop/is_running) + WriteStep, TelemetrySample, DeviceInfo
+│   ├── commands/
+│   │   ├── commands.h/.cpp   # CommandSet (load + check JSON, start / live-update steps, 0x40 -> 0x43) + CommandManager
+│   │   └── solopico_commands.json  # what each command does (object names only)
 │   └── canopen/
 │       ├── canopen_client.h/.cpp      # SocketCAN (or adopted fd), generic expedited SDO read/write, SYNC, TPDO routing by COB-ID, reader thread
 │       ├── device_profile.h/.cpp      # DeviceProfile: parse+validate JSON (nlohmann_json), ValueType encode/decode (q17 = x*131072)
-│       ├── canopen_translator.h/.cpp  # CanopenTranslator : DeviceTranslator, executes the profile; pdo/sync/poll threads
+│       ├── canopen_translator.h/.cpp  # CanopenTranslator : DeviceTranslator, runs steps by object name; own stop steps; pdo/sync/poll threads
+│       ├── profile_json.h             # JSON checking helpers shared by the profile and command set parsers
 │       └── devices/solopico.json      # SOLO PICO profile
 ├── canopen-sim/simulator.py  # simulated SOLO PICO (python-can)
 ├── ui/ui.py                  # curses UI
-└── tests/                    # GoogleTest: message, unix_socket, thread_safe_queue, device_profile, canopen_translator (fake PICO over socketpair)
+├── ui/motion_cli.py          # line-based test UI for SetMotionCommand (t/s/p/stop/home)
+├── ui/fake_engine.py         # fake engine + gateway + PICO for motion_cli.py without hardware
+└── tests/                    # GoogleTest: message, unix_socket, thread_safe_queue, device_profile, commands,
+                              # canopen_translator; fake PICO over a socketpair in tests/fake_pico.h
 ```
-Not source: `build/` and top-level `CMakeFiles/` are committed although `.gitignore` lists `build/`.
 `docs/` (v1-spec.md etc.) is referenced by code comments/README but is not in the repo.
 
 ## 4. Socket wire protocol (`shared/message.h`)
@@ -73,7 +81,8 @@ Frame: `[type u8][length u16 LE][payload]`. All integers little-endian. `ts` = u
 | 0x30 | DeviceInfoRequest | UI/engine -> gw | empty |
 | 0x31 | DeviceInfoResponse | gw -> engine -> UI | vendor, product, revision, serial: u32 each (16 B) |
 | 0x40 | SetRunStopCommand | UI -> engine -> gw | u8 run (1 B) |
-| 0x41 | RunStopStatusEvent | gw -> engine -> UI | ts u64, u8 running (9 B) |
+| 0x41 | RunStopStatusEvent | gw -> engine -> UI | ts u64, u8 running (9 B); answers 0x40 and 0x43, always |
+| 0x43 | SetMotionCommand | UI -> engine -> gw | u8 mode (0 STOP, 1 TORQUE, 2 SPEED, 3 POSITION, 4 HOME), i32 setpoint (mA / rpm / counts), u8 direction (0 CW, 1 CCW) (6 B) |
 | 0x51 | McuStatusEvent | gw -> engine -> UI | u8 alive (1 B), sent only on change |
 
 `ui/ui.py` duplicates these constants (it calls 0x22 `MSG_VELOCITY_EVENT`); keep both in sync.
@@ -108,14 +117,16 @@ Unverified on real hardware: TPDO enable bit meaning, whether reads need a speci
 ## 6. Threads
 **device-gateway** translator threads (process lifetime): `pdo_thread_` (TPDO -> TelemetrySample),
 `sync_thread_` (SYNC while running), `poll_thread_` (sdo_poll channels). `configure` runs on the first
-successful heartbeat probe and again after the node disappears and returns; `set_run_stop` configures
-first if needed; a failed RUN executes the `stop` sequence.
+successful heartbeat probe and again after the node disappears and returns; `start` / `execute`
+configure first if needed; a failed `start` runs the stop steps.
 
-**device-gateway** per engine session (`run_session`):
-- main thread `telemetry_loop`: `read_next_telemetry()` -> Position/Speed/CurrentEvent.
-- `command_loop`: only reader of the engine socket; handles DeviceInfoRequest, SetRunStopCommand (write, then read back status, reply RunStopStatusEvent).
+**device-gateway** per engine session (`EngineSession`, engine_session.cpp):
+- caller's thread `telemetry_loop`: `wait_next_telemetry()` -> Position/Speed/CurrentEvent.
+- `reader_loop`: only reader of the engine socket; answers DeviceInfoRequest itself, queues 0x40 / 0x43 for the worker. A STOP also calls `request_stop()` at once, so a ramp in progress gives way instead of finishing first.
+- `worker_loop`: carries out the queued commands one at a time through `CommandManager`, then replies RunStopStatusEvent (read-back of the status object, or the gateway's own state if that read fails).
 - `heartbeat_loop`: every 500 ms `probe_alive()`; sends McuStatusEvent on change.
-- `send_mutex` serializes writes to the engine socket; `session_active` atomic ends all three.
+- When one of them sees the engine gone, the session ends, queued commands are dropped and the motor is stopped.
+- `send_mutex_` serializes writes to the engine socket; `active_` ends all four threads.
 - Plus `CanopenClient::reader_thread_` (lifetime of process): routes SDO responses and TPDOs into two queues.
 
 **wizard-engine**: main thread `gateway_accept_loop` -> `gateway_loop`; `ui_command_loop` thread.
@@ -136,8 +147,9 @@ python3 canopen-sim/simulator.py        # 1
 ./build/device-gateway [vcan0|can0]     # 3
 python3 ui/ui.py                        # 4
 ```
-`device-gateway [iface] [profile]`; profile lookup: argv[2] -> $WIZARD_DEVICE_PROFILE ->
-/etc/wizard/devices/solopico.json -> <exe dir>/devices/solopico.json.
+`device-gateway [iface] [profile] [commands]`; profile lookup: argv[2] -> $WIZARD_DEVICE_PROFILE ->
+/etc/wizard/devices/solopico.json -> <exe dir>/devices/solopico.json. Command set lookup: argv[3] ->
+$WIZARD_COMMANDS -> /etc/wizard/commands/solopico_commands.json -> <exe dir>/commands/solopico_commands.json.
 Deps: Threads, SQLite3, nlohmann_json (find_package, else FetchContent; Yocto: DEPENDS nlohmann-json),
 python-can. Tests skipped when cross-compiling (48 tests, all passing).
 

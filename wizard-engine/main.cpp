@@ -5,6 +5,7 @@
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <thread>
 
 #include "db.h"
@@ -138,6 +139,42 @@ bool is_command_reply(MessageType type) {
     return type == MessageType::RunStopStatusEvent ||
            type == MessageType::DeviceInfoResponse ||
            type == MessageType::McuStatusEvent;
+}
+
+// Commands the UI may send; everything else from the UI is ignored.
+bool is_ui_command(MessageType type) {
+    return type == MessageType::SetRunStopCommand ||
+           type == MessageType::SetMotionCommand ||
+           type == MessageType::DeviceInfoRequest;
+}
+
+const char* motion_mode_name(MotionMode mode) {
+    switch (mode) {
+        case MotionMode::Stop:     return "STOP";
+        case MotionMode::Torque:   return "TORQUE";
+        case MotionMode::Speed:    return "SPEED";
+        case MotionMode::Position: return "POSITION";
+        case MotionMode::Home:     return "HOME";
+    }
+    return "?";
+}
+
+// One readable line per UI command, e.g. "UI sent 0x43 SetMotionCommand SPEED 1500 CCW".
+void log_ui_command(const Message& msg) {
+    auto& out = logline() << "UI sent " << type_hex(msg.type);
+    if (msg.type == MessageType::SetMotionCommand) {
+        if (auto p = parse_set_motion_command(msg)) {
+            out << " SetMotionCommand " << motion_mode_name(p->mode) << " " << p->setpoint
+                << (p->direction == MotionDirection::Ccw ? " CCW" : " CW");
+        } else {
+            out << " SetMotionCommand (malformed, " << msg.payload.size() << " bytes)";
+        }
+    } else if (msg.type == MessageType::SetRunStopCommand) {
+        if (auto run = parse_set_run_stop_command(msg)) out << " SetRunStopCommand " << (*run ? "RUN" : "STOP");
+    } else if (msg.type == MessageType::DeviceInfoRequest) {
+        out << " DeviceInfoRequest";
+    }
+    out << "\n";
 }
 
 bool is_telemetry(MessageType type) {
@@ -310,10 +347,9 @@ void ui_command_loop(GatewayChannel& gw_channel, UiCommandChannel& cmd_channel) 
                 break;
             }
             for (const auto& msg : *messages) {
-                logline() << "UI sent " << type_hex(msg.type) << "\n";
+                log_ui_command(msg);
 
-                if (msg.type != MessageType::SetRunStopCommand &&
-                    msg.type != MessageType::DeviceInfoRequest) {
+                if (!is_ui_command(msg.type)) {
                     errline() << "ignoring unexpected UI message "
                               << type_hex(msg.type) << "\n";
                     continue;

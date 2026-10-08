@@ -47,11 +47,13 @@ bool same_value(ValueType type, double a, double b) {
 
 }  // namespace
 
-CanopenTranslator::CanopenTranslator(const std::string& iface, DeviceProfile profile)
-    : CanopenTranslator(std::make_unique<CanopenClient>(iface, profile.node_id), profile) {}
+CanopenTranslator::CanopenTranslator(const std::string& iface, DeviceProfile profile,
+                                     std::vector<WriteStep> stop_steps)
+    : CanopenTranslator(std::make_unique<CanopenClient>(iface, profile.node_id), profile, std::move(stop_steps)) {}
 
-CanopenTranslator::CanopenTranslator(std::unique_ptr<CanopenClient> client, DeviceProfile profile)
-    : profile_(std::move(profile)), client_(std::move(client)) {
+CanopenTranslator::CanopenTranslator(std::unique_ptr<CanopenClient> client, DeviceProfile profile,
+                                     std::vector<WriteStep> stop_steps)
+    : profile_(std::move(profile)), stop_steps_(std::move(stop_steps)), client_(std::move(client)) {
     client_->set_sdo_timeout(std::chrono::milliseconds(profile_.sdo_timeout_ms));
 
     std::set<uint32_t> cob_ids;
@@ -140,7 +142,7 @@ bool CanopenTranslator::ramp_to(const ObjectDef& obj, const WriteStep& step) {
     const double duration_ms = step.ramp_rate > 0 ? std::fabs(target - *start) / step.ramp_rate * 1000.0
                                                   : static_cast<double>(step.ramp_ms);
     const bool integral = obj.type != ValueType::Q17;
-    // A ramp away from zero (e.g. torque up on RUN) gives way to a STOP that
+    // A ramp away from zero (e.g. torque up on start) gives way to a STOP that
     // is waiting for sequence_mutex_; a ramp towards zero is never interrupted.
     const bool away_from_zero = std::fabs(target) > std::fabs(*start);
 
@@ -201,7 +203,7 @@ bool CanopenTranslator::run_steps(const std::vector<WriteStep>& steps, const cha
 // prevent "drive disable". Used for every stop sequence.
 bool CanopenTranslator::run_stop_steps(const char* sequence) {
     bool ok = true;
-    for (const auto& step : profile_.stop) {
+    for (const auto& step : stop_steps_) {
         if (!write_step(step)) {
             std::cerr << sequence << ": step '" << step.object << "' failed, continuing\n";
             ok = false;
@@ -226,26 +228,33 @@ bool CanopenTranslator::configure_locked() {
     return ok;
 }
 
-bool CanopenTranslator::set_run_stop(bool run) {
-    if (!run) stop_requested_ = true;  // lets a RUN ramp in progress give way
+bool CanopenTranslator::stop() {
+    stop_requested_ = true;  // lets a start ramp in progress give way
     std::lock_guard<std::mutex> lock(sequence_mutex_);
-    if (!run) stop_requested_ = false;
+    stop_requested_ = false;
 
     // STOP never depends on configure: it must be attempted even if the node
     // was never configured or configure is failing (e.g. a rejected step).
-    if (!run) {
-        running_ = false;  // pause SYNC/polling first
-        return run_stop_steps("stop");
-    }
+    running_ = false;  // pause SYNC/polling first
+    return run_stop_steps("stop");
+}
 
+bool CanopenTranslator::execute(const std::vector<WriteStep>& steps) {
+    std::lock_guard<std::mutex> lock(sequence_mutex_);
+    if (!configured_ && !configure_locked()) return false;
+    return run_steps(steps, "execute");
+}
+
+bool CanopenTranslator::start(const std::vector<WriteStep>& steps) {
+    std::lock_guard<std::mutex> lock(sequence_mutex_);
     if (!configured_ && !configure_locked()) return false;
 
-    if (run_steps(profile_.run, "run")) {
+    if (run_steps(steps, "start")) {
         running_ = true;
         return true;
     }
-    // Half-applied RUN: bring the device back to a known stopped state.
-    run_stop_steps("stop (after failed run)");
+    // Half-applied start: bring the device back to a known stopped state.
+    run_stop_steps("stop (after failed start)");
     running_ = false;
     return false;
 }
@@ -306,7 +315,6 @@ std::optional<TelemetrySample> CanopenTranslator::make_sample(const TelemetryCha
     return TelemetrySample{ts, ch.kind, static_cast<int32_t>(v)};
 }
 
-std::optional<TelemetrySample> CanopenTranslator::read_next_telemetry() { return telemetry_.pop(); }
 
 TelemetryWait CanopenTranslator::wait_next_telemetry(std::chrono::milliseconds timeout,
                                                      TelemetrySample& out) {
@@ -333,7 +341,7 @@ void CanopenTranslator::pdo_loop() {
         std::copy(frame->data, frame->data + std::min<uint8_t>(frame->dlc, 4), bytes);
         if (auto s = make_sample(ch, frame->timestamp_us, decode_value(ch.type, le32(bytes)))) telemetry_.push(*s);
     }
-    telemetry_.close();  // read_next_telemetry -> nullopt, gateway reports the error
+    telemetry_.close();  // wait_next_telemetry -> Closed, the session reports the error
 }
 
 void CanopenTranslator::sync_loop() {

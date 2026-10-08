@@ -37,8 +37,9 @@ if(NOT CMAKE_CROSSCOMPILING)
         tests/test_unix_socket.cpp
         tests/test_thread_safe_queue.cpp
         tests/test_device_profile.cpp
+        tests/test_commands.cpp
         tests/test_canopen_translator.cpp)
-    target_link_libraries(wizard_tests PRIVATE shared canopen gtest_main)
+    target_link_libraries(wizard_tests PRIVATE shared gateway gtest_main)
     target_compile_definitions(wizard_tests PRIVATE
         WIZARD_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     include(GoogleTest)

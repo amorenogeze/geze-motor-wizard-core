@@ -137,6 +137,15 @@ Message make_mcu_status_event(bool responding) {
     return m;
 }
 
+Message make_set_motion_command(const SetMotionPayload& p) {
+    Message m;
+    m.type = MessageType::SetMotionCommand;
+    m.payload.push_back(static_cast<uint8_t>(p.mode));
+    put_i32le(m.payload, p.setpoint);
+    m.payload.push_back(static_cast<uint8_t>(p.direction));
+    return m;
+}
+
 std::optional<PositionEventPayload> parse_position_event(const Message& m) {
     if (m.type != MessageType::PositionEvent || m.payload.size() != 12) return std::nullopt;
     return PositionEventPayload{get_u64le(&m.payload[0]), get_i32le(&m.payload[8])};
@@ -171,6 +180,16 @@ std::optional<RunStopStatusPayload> parse_run_stop_status_event(const Message& m
 std::optional<bool> parse_mcu_status_event(const Message& m) {
     if (m.type != MessageType::McuStatusEvent || m.payload.size() != 1) return std::nullopt;
     return m.payload[0] != 0;
+}
+
+std::optional<SetMotionPayload> parse_set_motion_command(const Message& m) {
+    if (m.type != MessageType::SetMotionCommand || m.payload.size() != kSetMotionPayloadSize) return std::nullopt;
+    const uint8_t mode = m.payload[0];
+    const uint8_t direction = m.payload[5];
+    if (mode > static_cast<uint8_t>(MotionMode::Home)) return std::nullopt;
+    if (direction > static_cast<uint8_t>(MotionDirection::Ccw)) return std::nullopt;
+    return SetMotionPayload{static_cast<MotionMode>(mode), get_i32le(&m.payload[1]),
+                            static_cast<MotionDirection>(direction)};
 }
 
 }  // namespace wizard

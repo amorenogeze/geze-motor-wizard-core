@@ -125,12 +125,16 @@ python3 canopen-sim/simulator.py
 # Terminal 2 — relay
 ./build/wizard-engine
 
-# Terminal 3 — CANopen client  [iface] [device profile]
+# Terminal 3 — CANopen client  [iface] [device profile] [command set]
 ./build/device-gateway vcan0
 
 # Terminal 4 — UI (only once you want to interact)
 python3 ui/ui.py
+# or, for torque / speed / position commands (SetMotionCommand 0x43):
+python3 ui/motion_cli.py          # t 2000 | s 1500 ccw | p 4000 | stop | home | help
 ```
+Without hardware or vcan, `python3 ui/fake_engine.py` stands in for the engine,
+gateway and PICO so `ui/motion_cli.py` can be tried on its own.
 The simulator starts in **STOP** — no telemetry flows until you send
 `run` from the UI's Commands screen (the gateway only sends SYNC while
 running).
@@ -148,12 +152,36 @@ build). The profile defines:
 | `node_id`, `sdo`, `sync_period_ms` | CANopen node, SDO style/timeout, SYNC period |
 | `objects` | name → `{index, sub, type}`; `type` is `u8/u16/u32/i16/i32/q17` (`q17` = SOLO float, value × 131072) |
 | `configure` | SDO writes applied when the node first answers, and again after it comes back from a power cycle; `"verify": true` reads back, `"skip": true` keeps a step without running it |
-| `run` / `stop` | SDO writes for the RUN / STOP commands; a failed RUN runs `stop` |
 | `status`, `alive_object` | object read for run/stop status and by the 500 ms heartbeat |
 | `device_info` | each field from an object or a fixed value |
 | `telemetry` | `tpdo` (COB-ID + type) or `sdo_poll` (object + period); `scale` converts to the integer sent on the socket (e.g. A → mA) |
 
 Keys starting with `_` are comments; any other unknown key is an error.
+
+### Command set
+
+What the commands do lives in a second file, `commands/solopico_commands.json`,
+which names objects only (addresses stay in the device profile). Lookup order:
+`argv[3]`, `$WIZARD_COMMANDS`, `/etc/wizard/commands/solopico_commands.json`
+(installed), then `commands/solopico_commands.json` next to the executable.
+It is checked against the device profile at startup.
+
+| Section | Meaning |
+|---|---|
+| `device` | name of the device profile it belongs to (must match) |
+| `direction` | object + values written for CW / CCW |
+| `enable` | steps that start the drive |
+| `stop` | STOP; every step is attempted even if one fails; a failed start also runs it |
+| `home` | position becomes 0 (optional) |
+| `modes` | `torque` / `speed` / `position`: `enter` steps, `reference` object, `scale` (socket unit → object unit), `min`/`max` (clamped), `ramp_rate`, `uses_direction`, `reference_first` |
+| `legacy_run` | what `SetRunStopCommand` RUN means: mode + setpoint + direction |
+
+How the gateway handles a command (`CommandManager`): a mode while stopped
+starts it (enter steps, direction, enable, reference); the same mode and
+direction while running only moves the reference (live update, ramped);
+another mode or direction stops first, then starts; STOP runs `stop`; HOME runs
+`home` and is refused while running. Setpoints are clamped to `min`/`max`.
+Every command is answered with `RunStopStatusEvent` (0x41).
 
 
 ### Debugging

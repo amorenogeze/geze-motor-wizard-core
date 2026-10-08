@@ -230,20 +230,4 @@ SdoResult CanopenClient::sdo_write(uint16_t index, uint8_t subindex, uint32_t va
     return r;
 }
 
-std::optional<uint32_t> CanopenClient::sdo_read_u32(uint16_t index, uint8_t subindex) {
-    auto r = sdo_read(index, subindex);
-    if (!r.ok) return std::nullopt;
-    return r.value;
-}
-
-std::optional<uint8_t> CanopenClient::sdo_read_u8(uint16_t index, uint8_t subindex) {
-    auto r = sdo_read(index, subindex);
-    if (!r.ok) return std::nullopt;
-    return static_cast<uint8_t>(r.value & 0xFF);
-}
-
-bool CanopenClient::sdo_write_u8(uint16_t index, uint8_t subindex, uint8_t value) {
-    return sdo_write(index, subindex, value, 1, true).ok;
-}
-
 }  // namespace wizard

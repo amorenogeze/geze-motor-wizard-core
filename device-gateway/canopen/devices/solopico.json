@@ -1,5 +1,5 @@
 {
-  "_comment": "SOLO PICO device profile for device-gateway. Everything PICO-specific lives here: objects, startup configuration, run/stop, telemetry. Object indexes and encodings come from SOLO's official CANopen library (SOLOMotorControllersCanopen.h). Keys starting with '_' are comments. A step with \"skip\": true is kept but not executed.",
+  "_comment": "SOLO PICO device profile for device-gateway: objects (addresses and types), startup configuration, status, alive check and telemetry. What the commands do (run, stop, torque / speed / position, home) is in ../../commands/solopico_commands.json. Object indexes and encodings come from SOLO's official CANopen library (SOLOMotorControllersCanopen.h). Keys starting with '_' are comments. A step with \"skip\": true is kept but not executed.",
 
   "name": "SOLO PICO",
   "node_id": 1,
@@ -28,6 +28,7 @@
     "motor_direction":       { "index": "0x300C", "type": "u32", "_values": "0 CCW, 1 CW" },
     "encoder_lines":         { "index": "0x3010", "type": "u32", "_unit": "lines (pulses) per revolution of ONE channel; SOLO counts 4x (quadrature)" },
     "speed_limit":           { "index": "0x3011", "type": "i32", "_unit": "rpm" },
+    "position_reference":    { "index": "0x301B", "type": "i32", "_unit": "encoder counts, absolute, 0 = home. Not yet verified on the real PICO." },
     "reset_position":        { "index": "0x301F", "type": "u32", "_values": "1 resets position_feedback to 0" },
     "feedback_mode":         { "index": "0x3013", "type": "u32", "_values": "0 sensorless, 1 encoders, 2 hall, 3 zsft" },
     "motor_type":            { "index": "0x3015", "type": "u32", "_values": "0 DC brushed, 1 BLDC/PMSM, 2 ACIM, 3 BLDC ultrafast" },
@@ -71,19 +72,6 @@
     { "object": "tpdo_position_sync",  "value": 1 },
     { "object": "tpdo_speed_cobid",    "value": "0x80000282" },
     { "object": "tpdo_speed_sync",     "value": 1 }
-  ],
-
-  "run": [
-    { "object": "drive_enable",     "value": 1 },
-    { "object": "motor_direction",  "value": 1 },
-    { "object": "torque_reference", "value": 5.75, "ramp_rate": 0.5,
-      "_comment": "A. RUN ramps the torque current up at ramp_rate A/s (0 -> 4.0 A in 4 s, steps every 20 ms). Keep value <= current_limit." }
-  ],
-
-  "stop": [
-    { "object": "torque_reference", "value": 0, "ramp_rate": 0.5, "ramp_start_object": "dc_motor_current",
-      "_comment": "Ramp down at 0.5 A/s, starting from the MEASURED current when it is lower than the reference (unloaded motor). If a write fails, 0 is written directly." },
-    { "object": "drive_enable",     "value": 0 }
   ],
 
   "status": { "object": "drive_enable", "running_value": 1 },

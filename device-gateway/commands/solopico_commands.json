@@ -1,0 +1,54 @@
+{
+  "_comment": "What each UI command does on the SOLO PICO. Only object NAMES are used here; their addresses and types are in canopen/devices/solopico.json. Values are in the object's own units (A, rpm, counts). Keys starting with '_' are comments.",
+
+  "device": "SOLO PICO",
+
+  "direction": { "object": "motor_direction", "cw": 1, "ccw": 0,
+    "_comment": "Written when a mode with uses_direction starts. SetMotionCommand direction byte: 0 = CW, 1 = CCW." },
+
+  "enable": [
+    { "object": "drive_enable", "value": 1 }
+  ],
+
+  "stop": [
+    { "object": "speed_reference",  "value": 0, "ramp_rate": 1000, "ramp_start_object": "speed_feedback",
+      "_comment": "rpm/s. Only does something after SPEED mode; it is already 0 after TORQUE / POSITION, so it is a single write." },
+    { "object": "torque_reference", "value": 0, "ramp_rate": 0.5, "ramp_start_object": "dc_motor_current",
+      "_comment": "Ramp down at 0.5 A/s, starting from the MEASURED current when it is lower than the reference (unloaded motor). If a write fails, 0 is written directly." },
+    { "object": "drive_enable",     "value": 0,
+      "_comment": "Freewheel. Every stop step runs even if an earlier one failed." }
+  ],
+
+  "home": [
+    { "object": "reset_position", "value": 1,
+      "_comment": "Current position becomes 0. Refused while running." }
+  ],
+
+  "modes": {
+    "torque": {
+      "unit": "mA",
+      "enter": [ { "object": "control_mode", "value": 1, "verify": true } ],
+      "reference": "torque_reference",
+      "scale": 0.001, "min": 0, "max": 10000, "ramp_rate": 0.5,
+      "_comment": "Setpoint in mA, written in A (q17). max = current_limit (10 A). Ramped at 0.5 A/s, also on a live update."
+    },
+    "speed": {
+      "unit": "rpm",
+      "enter": [ { "object": "control_mode", "value": 0, "verify": true } ],
+      "reference": "speed_reference",
+      "scale": 1, "min": 0, "max": 4000, "ramp_rate": 500,
+      "_comment": "Setpoint in rpm (magnitude; the direction byte picks the sign). max = speed_limit. The rpm scale is only right once encoder_lines in solopico.json is the real value."
+    },
+    "position": {
+      "unit": "counts",
+      "enter": [ { "object": "control_mode", "value": 2, "verify": true } ],
+      "reference": "position_reference",
+      "scale": 1, "min": -2000000, "max": 2000000,
+      "uses_direction": false, "reference_first": true,
+      "_comment": "Absolute target in encoder counts, 0 = home. The target is written before the drive is enabled, so it never moves to a stale target. Travel speed is limited by speed_limit."
+    }
+  },
+
+  "legacy_run": { "mode": "torque", "setpoint": 5750, "direction": "cw",
+    "_comment": "SetRunStopCommand (0x40) RUN: the fixed torque run, 5.75 A clockwise." }
+}

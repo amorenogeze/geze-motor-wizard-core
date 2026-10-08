@@ -67,11 +67,6 @@ public:
     SdoResult sdo_write(uint16_t index, uint8_t subindex, uint32_t value, uint8_t size,
                         bool size_indicated);
 
-    // Kept for existing callers: thin wrappers over sdo_read / sdo_write.
-    std::optional<uint32_t> sdo_read_u32(uint16_t index, uint8_t subindex);
-    std::optional<uint8_t> sdo_read_u8(uint16_t index, uint8_t subindex);
-    bool sdo_write_u8(uint16_t index, uint8_t subindex, uint8_t value);
-
     // CANopen SYNC (COB-ID 0x080, no data). Nodes whose TPDOs are
     // synchronous answer with their TPDOs.
     bool send_sync();

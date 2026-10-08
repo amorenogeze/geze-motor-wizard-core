@@ -1,4 +1,5 @@
 #include "device_profile.h"
+#include "profile_json.h"
 
 #include <cmath>
 #include <fstream>
@@ -6,36 +7,23 @@
 #include <set>
 #include <sstream>
 
-#include <nlohmann/json.hpp>
-
 namespace wizard {
 
-namespace {
+// --------------------------------------------------------------- shared JSON helpers
 
-using nlohmann::json;
+namespace profile_json {
 
-constexpr double kQ17One = 131072.0;  // 2^17
+void Checker::error(const std::string& where, const std::string& what) {
+    errors_.push_back(where + ": " + what);
+}
 
-// Collects every problem so one run of the gateway reports them all.
-class Checker {
-public:
-    void error(const std::string& where, const std::string& what) {
-        errors_.push_back(where + ": " + what);
-    }
-    bool ok() const { return errors_.empty(); }
-    std::string report() const {
-        std::ostringstream ss;
-        ss << errors_.size() << " problem(s) in device profile:";
-        for (const auto& e : errors_) ss << "\n  - " << e;
-        return ss.str();
-    }
+std::string Checker::report() const {
+    std::ostringstream ss;
+    ss << errors_.size() << " problem(s) in " << what_ << ":";
+    for (const auto& e : errors_) ss << "\n  - " << e;
+    return ss.str();
+}
 
-private:
-    std::vector<std::string> errors_;
-};
-
-// Keys starting with '_' are comments. Any other unknown key is an error so
-// that a typo ("perod_ms") does not silently fall back to a default.
 void check_keys(const json& obj, const std::set<std::string>& allowed, const std::string& where,
                 Checker& c) {
     for (auto it = obj.begin(); it != obj.end(); ++it) {
@@ -45,7 +33,6 @@ void check_keys(const json& obj, const std::set<std::string>& allowed, const std
     }
 }
 
-// Integers may be written as JSON numbers or as "0x..." strings.
 std::optional<uint64_t> to_uint(const json& v) {
     if (v.is_number_unsigned()) return v.get<uint64_t>();
     if (v.is_number_integer() && v.get<int64_t>() >= 0) return static_cast<uint64_t>(v.get<int64_t>());
@@ -62,7 +49,7 @@ std::optional<uint64_t> to_uint(const json& v) {
 }
 
 std::optional<uint64_t> get_uint(const json& obj, const std::string& key, const std::string& where,
-                                 Checker& c, uint64_t max, bool required = true) {
+                                 Checker& c, uint64_t max, bool required) {
     if (!obj.contains(key)) {
         if (required) c.error(where, "missing '" + key + "'");
         return std::nullopt;
@@ -84,33 +71,11 @@ bool get_bool(const json& obj, const std::string& key, bool fallback, const std:
     return obj[key].get<bool>();
 }
 
-std::optional<ValueType> to_type(const json& v) {
-    if (!v.is_string()) return std::nullopt;
-    const std::string s = v.get<std::string>();
-    if (s == "u8") return ValueType::U8;
-    if (s == "u16") return ValueType::U16;
-    if (s == "u32") return ValueType::U32;
-    if (s == "i16") return ValueType::I16;
-    if (s == "i32") return ValueType::I32;
-    if (s == "q17") return ValueType::Q17;
-    return std::nullopt;
-}
-
-std::optional<TelemetryKind> to_kind(const std::string& s) {
-    if (s == "position") return TelemetryKind::Position;
-    if (s == "speed" || s == "velocity") return TelemetryKind::Velocity;
-    if (s == "current") return TelemetryKind::Current;
-    return std::nullopt;
-}
-
-std::string get_object_ref(const json& obj, const std::string& key, const std::string& where,
-                           const DeviceProfile& p, Checker& c);
-
 std::vector<WriteStep> parse_steps(const json& root, const std::string& key,
-                                   const DeviceProfile& p, Checker& c) {
+                                   const DeviceProfile& p, Checker& c, bool required) {
     std::vector<WriteStep> steps;
     if (!root.contains(key)) {
-        c.error(key, "missing");
+        if (required) c.error(key, "missing");
         return steps;
     }
     if (!root[key].is_array()) {
@@ -180,6 +145,33 @@ std::string get_object_ref(const json& obj, const std::string& key, const std::s
     std::string name = obj[key].get<std::string>();
     if (!p.objects.count(name)) c.error(where, "unknown object '" + name + "'");
     return name;
+}
+
+}  // namespace profile_json
+
+namespace {
+
+using namespace profile_json;
+
+constexpr double kQ17One = 131072.0;  // 2^17
+
+std::optional<ValueType> to_type(const json& v) {
+    if (!v.is_string()) return std::nullopt;
+    const std::string s = v.get<std::string>();
+    if (s == "u8") return ValueType::U8;
+    if (s == "u16") return ValueType::U16;
+    if (s == "u32") return ValueType::U32;
+    if (s == "i16") return ValueType::I16;
+    if (s == "i32") return ValueType::I32;
+    if (s == "q17") return ValueType::Q17;
+    return std::nullopt;
+}
+
+std::optional<TelemetryKind> to_kind(const std::string& s) {
+    if (s == "position") return TelemetryKind::Position;
+    if (s == "speed" || s == "velocity") return TelemetryKind::Velocity;
+    if (s == "current") return TelemetryKind::Current;
+    return std::nullopt;
 }
 
 InfoField parse_info_field(const json& info, const std::string& key, const DeviceProfile& p,
@@ -288,8 +280,12 @@ static DeviceProfile parse_device_profile_impl(const std::string& json_text) {
     DeviceProfile p;
     check_keys(root,
                {"name", "node_id", "sdo", "sync_period_ms", "telemetry_only_while_running", "objects",
-                "configure", "run", "stop", "status", "alive_object", "device_info", "telemetry"},
+                "configure", "status", "alive_object", "device_info", "telemetry"},
                "profile", c);
+    for (const char* moved : {"run", "stop"})
+        if (root.contains(moved))
+            c.error("profile", std::string("'") + moved +
+                                   "' moved to the command set (commands/<device>_commands.json)");
 
     p.name = "unnamed device";
     if (root.contains("name")) {
@@ -340,8 +336,6 @@ static DeviceProfile parse_device_profile_impl(const std::string& json_text) {
     }
 
     p.configure = parse_steps(root, "configure", p, c);
-    p.run = parse_steps(root, "run", p, c);
-    p.stop = parse_steps(root, "stop", p, c);
 
     if (!root.contains("status") || !root["status"].is_object()) {
         c.error("status", "missing {\"object\", \"running_value\"}");

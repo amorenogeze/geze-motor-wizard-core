@@ -12,8 +12,11 @@
 namespace wizard {
 
 // Everything device-specific about a CANopen node, loaded from a JSON file
-// (e.g. canopen/devices/solopico.json). CanopenTranslator contains no object
-// indexes, COB-IDs or scaling of its own: it only executes what the profile says.
+// (e.g. canopen/devices/solopico.json): which objects exist and where, how to
+// configure the node, how to tell it is alive or running, and the telemetry.
+// CanopenTranslator contains no object indexes, COB-IDs or scaling of its own.
+// What a command does (run, stop, motion modes) is NOT here: that is the
+// command set (commands/<device>_commands.json, commands/commands.h).
 
 // How a 32-bit SDO/PDO payload is interpreted.
 //   Q17 = signed fixed point value * 131072 (2^17), used by SOLO for floats.
@@ -26,20 +29,7 @@ struct ObjectDef {
     ValueType type = ValueType::U32;
 };
 
-// One SDO write in a sequence (configure / run / stop).
-struct WriteStep {
-    std::string object;
-    double value = 0.0;
-    bool verify = false;    // read back and compare after writing
-    uint32_t wait_ms = 0;   // sleep after the write (e.g. motor identification)
-    uint32_t ramp_ms = 0;   // >0: move from the current value to 'value' over this
-                            // time in small steps (e.g. torque 0 -> 2 A -> 0)
-    double ramp_rate = 0;   // >0: same, at this rate in object units per second
-                            // (e.g. 0.5 = 0.5 A/s). Exclusive with ramp_ms.
-    std::string ramp_start_object;  // optional: start the ramp from |this object|
-                            // when it is smaller than the current value (e.g. the
-                            // measured current when the reference is unreachable)
-};
+// WriteStep (one write in a sequence) is defined in device_translator.h.
 
 enum class TelemetrySource { Tpdo, SdoPoll };
 
@@ -73,8 +63,6 @@ struct DeviceProfile {
     std::map<std::string, ObjectDef> objects;
 
     std::vector<WriteStep> configure;  // once each time the node (re)appears
-    std::vector<WriteStep> run;
-    std::vector<WriteStep> stop;
 
     std::string status_object;         // read to answer "is it running?"
     double status_running_value = 1;

@@ -11,8 +11,12 @@ uses with device-gateway/canopen/devices/solopico.json:
   * TPDOs are synchronous: configured through 0x1814..0x1819 (sub 1 = COB-ID
     | 0x80000000 enable, sub 2 = every N SYNCs) and sent when a SYNC (0x080)
     arrives.
-  * A toy brushed motor: with drive_enable = 1 the torque reference (A)
-    becomes current, speed follows it, position integrates speed.
+  * A toy brushed motor with the three SOLO control modes (control_mode
+    0x3016): 1 torque (the torque reference becomes current, speed follows
+    it), 0 speed (speed follows the speed reference, direction from 0x300C),
+    2 position (moves to the position reference at up to speed_limit).
+    Position integrates speed in encoder counts (4 x encoder_lines per rev);
+    reset_position (0x301F) = 1 sets it to 0.
 
 Starts like a factory PICO (motor type BLDC, analogue command mode), so the
 gateway's configure step is exercised. Requires a SocketCAN interface:
@@ -69,10 +73,13 @@ FACTORY_OD = {
     (0x3008, 0): 0,                # drive enable
     (0x3009, 0): 20,               # pwm kHz
     (0x300C, 0): 0,                # direction 0 CCW / 1 CW
+    (0x3010, 0): 1024,             # encoder lines (factory default; the profile overwrites it)
     (0x3011, 0): 8000,             # speed limit rpm
     (0x3013, 0): 0,                # feedback mode
     (0x3015, 0): 1,                # motor type: BLDC/PMSM (factory)
-    (0x3016, 0): 0,                # control mode: speed
+    (0x3016, 0): 0,                # control mode: 0 speed, 1 torque, 2 position
+    (0x301B, 0): 0,                # position reference counts
+    (0x301F, 0): 0,                # reset position (write 1)
     (0x3031, 0): to_q17(24.0),     # bus voltage
     (0x3032, 0): 0,                # DC motor current Im (q17)
     (0x3034, 0): 0,                # Iq feedback (q17)
@@ -123,6 +130,10 @@ class Pico:
             self.od[(index, sub)] = value
             if index == 0x3007 and value == 1:
                 print("motor identification requested (simulated, instant)")
+            if index == 0x301F and value == 1:
+                self._position = 0.0
+                self.od[(0x3037, 0)] = 0
+                self.od[(0x301F, 0)] = 0  # self-clearing, like a command
             return 0
 
     def tpdos_for_sync(self):
@@ -141,19 +152,48 @@ class Pico:
         return frames
 
     def step(self, dt: float):
-        """Toy brushed motor: current = torque ref, speed follows current."""
+        """Toy brushed motor in torque, speed or position control."""
         with self.lock:
             enabled = self.od[(0x3008, 0)] == 1
-            ref = from_q17(self.od[(0x3004, 0)]) if enabled else 0.0
+            mode = self.od[(0x3016, 0)]
             limit = from_q17(self.od[(0x3003, 0)])
-            current = max(-limit, min(limit, ref))
+            speed_limit = float(self.od[(0x3011, 0)])
+            direction = 1.0 if self.od[(0x300C, 0)] == 1 else -1.0
+            counts_per_rev = 4.0 * max(1, self.od[(0x3010, 0)])
+            lag = 0.2  # s, speed follows its target with this time constant
+
+            if not enabled:
+                target = 0.0
+                lag = 1.0  # freewheel: coasts down slowly
+            elif mode == 1:  # torque: current = reference, speed follows current
+                ref = max(-limit, min(limit, from_q17(self.od[(0x3004, 0)])))
+                target = direction * 3000.0 * ref  # rpm per A
+            elif mode == 0:  # speed: magnitude from the reference, sign from the direction
+                ref = self.od[(0x3005, 0)]
+                if ref & 0x80000000:
+                    ref -= 1 << 32
+                target = direction * abs(ref)
+            else:  # position: P controller towards the reference
+                ref = self.od[(0x301B, 0)]
+                if ref & 0x80000000:
+                    ref -= 1 << 32
+                target = (ref - self._position) * 0.5  # rpm per count of error
+                lag = 0.05
+            target = max(-speed_limit, min(speed_limit, target))
+
+            previous = self._speed
+            self._speed += (target - self._speed) * min(1.0, dt / lag)
+            self._position += self._speed / 60.0 * counts_per_rev * dt
+
+            if not enabled:
+                current = 0.0
+            elif mode == 1:
+                current = max(-limit, min(limit, from_q17(self.od[(0x3004, 0)])))
+            else:  # what it takes to hold the speed plus to accelerate
+                accel = (self._speed - previous) / dt if dt > 0 else 0.0
+                current = min(limit, 0.1 + abs(self._speed) / 3000.0 + abs(accel) / 20000.0)
             if enabled and current:
                 current += random.uniform(-0.02, 0.02)  # ripple
-            direction = 1.0 if self.od[(0x300C, 0)] == 1 else -1.0
-            target = direction * 3000.0 * current  # rpm per A
-            target = max(-self.od[(0x3011, 0)], min(self.od[(0x3011, 0)], target))
-            self._speed += (target - self._speed) * min(1.0, dt / 0.2)  # 200 ms lag
-            self._position += self._speed / 60.0 * 4096.0 * dt        # 4096 counts/rev
 
             self.od[(0x3032, 0)] = to_q17(current)
             self.od[(0x3034, 0)] = to_q17(current)
