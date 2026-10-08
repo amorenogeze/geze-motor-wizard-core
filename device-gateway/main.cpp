@@ -89,17 +89,19 @@ void handle_device_info_request(DeviceTranslator& translator, UnixSocket& engine
     engine_sock.send(make_device_info_response(payload));
 }
 
-// Writes run/stop, reads back the resulting status, replies on the engine socket.
 void handle_set_run_stop_command(DeviceTranslator& translator, UnixSocket& engine_sock,
                                  std::mutex& send_mutex, bool run) {
-    translator.set_run_stop(run);
-    auto status = translator.read_run_stop_status();
-    if (!status) {
-        std::cerr << "run/stop status read failed after command\n";
-        return;
+    const bool write_ok = translator.set_run_stop(run);
+
+    bool running = write_ok ? run : false;
+    if (auto status = translator.read_run_stop_status()) {
+        running = *status;
+    } else {
+        std::cerr << "run/stop status read failed after command, reporting "
+                  << (running ? "RUNNING" : "STOPPED") << " (commanded)\n";
     }
 
-    RunStopStatusPayload payload{now_us(), *status};
+    RunStopStatusPayload payload{now_us(), running};
     std::lock_guard<std::mutex> lock(send_mutex);
     engine_sock.send(make_run_stop_status_event(payload));
 }
