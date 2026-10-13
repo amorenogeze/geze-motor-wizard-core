@@ -15,8 +15,10 @@
       "_comment": "rpm/s. Only does something after SPEED mode; it is already 0 after TORQUE / POSITION, so it is a single write." },
     { "object": "torque_reference", "value": 0, "ramp_rate": 0.5, "ramp_start_object": "dc_motor_current",
       "_comment": "Ramp down at 0.5 A/s, starting from the MEASURED current when it is lower than the reference (unloaded motor). If a write fails, 0 is written directly." },
-    { "object": "drive_enable",     "value": 0,
-      "_comment": "Freewheel. Every stop step runs even if an earlier one failed." }
+    { "object": "drive_enable",     "value": 0, "wait_ms": 3000,
+      "_comment": "Freewheel: the door spring pushes the door back to its closed (start) position. wait_ms gives it time to arrive before the zero is set. Raise it if the door needs longer to close. Every stop step runs even if an earlier one failed." },
+    { "object": "reset_position",   "value": 1,
+      "_comment": "After every STOP the door is closed again (spring), so this is position 0. Position targets are counts from the closed door." }
   ],
 
   "home": [
