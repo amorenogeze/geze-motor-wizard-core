@@ -29,21 +29,25 @@
   "modes": {
     "torque": {
       "unit": "mA",
-      "enter": [ { "object": "control_mode", "value": 1, "verify": true } ],
+      "enter": [ { "object": "control_mode", "value": 1, "verify": true },
+                 { "object": "current_limit", "value": 10 } ],
       "reference": "torque_reference",
       "scale": 0.001, "min": 0, "max": 10000, "ramp_rate": 0.5,
       "_comment": "Setpoint in mA, written in A (q17). max = current_limit (10 A). Ramped at 0.5 A/s, also on a live update."
     },
     "speed": {
       "unit": "rpm",
-      "enter": [ { "object": "control_mode", "value": 0, "verify": true } ],
+      "enter": [ { "object": "control_mode", "value": 0, "verify": true },
+                 { "object": "current_limit", "value": 10 } ],
       "reference": "speed_reference",
       "scale": 1, "min": 0, "max": 4000, "ramp_rate": 500,
       "_comment": "Setpoint in rpm (magnitude; the direction byte picks the sign). max = speed_limit. The rpm scale is only right once encoder_lines in solopico.json is the real value."
     },
     "position": {
       "unit": "counts",
-      "enter": [ { "object": "control_mode", "value": 2, "verify": true } ],
+      "enter": [ { "object": "control_mode", "value": 2, "verify": true },
+                 { "object": "current_limit", "value": 5.75,
+                   "_comment": "A. Position mode may use at most what opens the door in torque mode (TORQUE 5750). The other modes set their own limit, so none inherits this one." } ],
       "reference": "position_reference",
       "scale": 1, "min": -2000000, "max": 2000000,
       "uses_direction": false, "reference_first": true,
