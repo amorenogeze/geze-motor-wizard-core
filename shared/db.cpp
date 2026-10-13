@@ -1,5 +1,6 @@
 #include "db.h"
 
+#include <cstdio>
 #include <ctime>
 #include <iostream>
 #include <sqlite3.h>
@@ -119,11 +120,17 @@ void Database::insert_data(int64_t run_id, int64_t data_type_id,
                            uint64_t timestamp_us, int32_t value) {
     if (!db_) return;
 
-    const time_t t = static_cast<time_t>(timestamp_us / 1000000);
+    // ISO-8601 UTC with milliseconds, e.g. 2026-10-13T08:48:12.345: telemetry
+    // arrives every 100 ms, so whole seconds put ~10 samples per type on the
+    // same timestamp. SQLite's date functions accept the fractional part.
+    const time_t t  = static_cast<time_t>(timestamp_us / 1000000);
+    const unsigned ms = static_cast<unsigned>((timestamp_us / 1000) % 1000);
     struct tm    tm_buf{};
     gmtime_r(&t, &tm_buf);
+    char sec_buf[24];
+    strftime(sec_buf, sizeof(sec_buf), "%Y-%m-%dT%H:%M:%S", &tm_buf);
     char ts_buf[32];
-    strftime(ts_buf, sizeof(ts_buf), "%Y-%m-%dT%H:%M:%S", &tm_buf);
+    snprintf(ts_buf, sizeof(ts_buf), "%s.%03u", sec_buf, ms);
 
     sqlite3_stmt* stmt = prepare(R"SQL(
         INSERT INTO Data (Run_Id, Data_Type_Id, Value, Timestamp)
